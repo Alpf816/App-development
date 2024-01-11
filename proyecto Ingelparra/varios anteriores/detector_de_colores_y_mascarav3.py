@@ -15,17 +15,18 @@ def nada(x):
 
 
 cv2.namedWindow('parametros')
+cv2.resizeWindow('parametros',700,400)
 
 cv2.createTrackbar('Tonalidad minima','parametros',0,255,nada)
-cv2.createTrackbar('Tonalidad maxima','parametros',0,255,nada)
+cv2.createTrackbar('Tonalidad maxima','parametros',255,255,nada)
 cv2.createTrackbar('pureza minima','parametros',0,255,nada)
-cv2.createTrackbar('pureza maxima','parametros',0,255,nada)
+cv2.createTrackbar('pureza maxima','parametros',255,255,nada)
 cv2.createTrackbar('luminosidad minima','parametros',0,255,nada)
-cv2.createTrackbar('luminosidad maxima','parametros',0,255,nada)
-cv2.createTrackbar('Kernel X','parametros',0,30,nada)
-cv2.createTrackbar('Kernel Y','parametros',0,30,nada)        
+cv2.createTrackbar('luminosidad maxima','parametros',255,255,nada)
+cv2.createTrackbar('Kernel X','parametros',1,30,nada)
+cv2.createTrackbar('Kernel Y','parametros',1,30,nada)        
 
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 while(1):
     ret, frame = cap.read()
     if ret:
@@ -50,13 +51,13 @@ while(1):
         mascara = cv2.morphologyEx(mascara,cv2.MORPH_CLOSE,kernel)
         mascara = cv2.morphologyEx(mascara,cv2.MORPH_OPEN,kernel)
         #se puede cambiar el cv2.RETR_LIST por cv2.RETR_EXTERNAL para solo mostrar los contronos exteriores 
-        contorno, _ = cv2.findContours(mascara,cv2.RETR_LIST,cv2.CHAIN_APPROX_SIMPLE)
+        contorno, _ = cv2.findContours(mascara,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
         cv2.drawContours(frame,contorno,-1,(0,0,0),2)
         
 
         #Esto es opcional quitar si afecta a la lectura, estoy probando
 #--------------------------------------------------------------------
-        mascara = cv2.Canny(mascara,50,50)
+        #mascara = cv2.Canny(mascara,50,50)
 #---------------------------------------------------------------------
 
         cv2.imshow('camara',frame)
