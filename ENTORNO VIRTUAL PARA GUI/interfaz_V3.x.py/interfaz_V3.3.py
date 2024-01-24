@@ -16,12 +16,18 @@ from PyQt6.QtWidgets import (QApplication,
                             QListWidget,
                             QGridLayout,
                             QFrame,
-                            QSlider)
+                            QSlider,
+                            QComboBox,
+                            QTableWidget,
+                            QTableWidgetItem,
+                            QScrollArea)
 from PyQt6.QtGui import QImage, QPixmap,QAction,QKeySequence
 from PyQt6.QtCore import Qt,QThread, pyqtSignal, QMutex, QMutexLocker,QTimer
 import cv2
 from queue import Queue
 import numpy as np
+
+
 
 class VideoStreamThread(QThread):
     frame_actualizado = pyqtSignal(QImage)
@@ -116,33 +122,34 @@ class MiVentana(QWidget):
         print("Captura finalizada")
 
 class MiDockWidget(QWidget):
-    
     def __init__(self, video_thread):
         super().__init__()
-        self.hilo_video = video_thread
-        
-        self.label2 = QLabel(self)  # Agregado
-        self.label3 = QLabel(self)  # Agregado
-        self.label4 = QLabel(self)  # Agregado
-        self.label5 = QLabel(self)  # Agregado
 
+        self.hilo_video = video_thread
+        self.presets_combobox = QComboBox(self)
+        self.presets_combobox.addItems(["Original", "Seleccion de colores", "Contornos"])
+
+        # Crear instancia de ImageProcessorThread y pasarla a MiDockWidget
+        self.image_processor_thread = ImageProcessorThread(self.hilo_video.get_latest_frame, self)
+        
+        self.label2 = QLabel(self)
+        self.label3 = QLabel(self)
+        self.label4 = QLabel(self)
+        self.label5 = QLabel(self)
 
         layout_principalQD = QGridLayout(self)
         start_button = QPushButton("Iniciar Captura mascara", self)
         stop_button = QPushButton("Detener Captura mascara", self)
-        
 
-        layout_principalQD.addWidget(self.label2, 1, 1, 1, 1)  # Agregado
-        layout_principalQD.addWidget(self.label3, 2, 1, 1, 1)  # Agregado
-        layout_principalQD.addWidget(self.label4, 1, 2, 1, 1)  # Agregado
-        layout_principalQD.addWidget(self.label5, 2, 2, 1, 1)  # Agregado
+        layout_principalQD.addWidget(self.label2, 1, 1, 1, 1)
+        layout_principalQD.addWidget(self.label3, 2, 1, 1, 1)
+        layout_principalQD.addWidget(self.label4, 1, 2, 1, 1)
+        layout_principalQD.addWidget(self.label5, 2, 2, 1, 1)
 
         layout_principalQD.addWidget(start_button, 4, 1, 1, 1)
         layout_principalQD.addWidget(stop_button, 4, 2, 1, 1)
-        
+        layout_principalQD.addWidget(self.presets_combobox, 5, 1, 1, 2)
 
-        self.camera_thread = video_thread
-        self.image_processor_thread = ImageProcessorThread(self.camera_thread.get_latest_frame)
         self.image_processor_thread.processed_frame_signal.connect(self.update_frame2)
         self.image_processor_thread.processed_frame_signal1.connect(self.update_frame3)
         self.image_processor_thread.processed_frame_signal2.connect(self.update_frame4)
@@ -153,26 +160,23 @@ class MiDockWidget(QWidget):
 
         stop_button.clicked.connect(self.pausar_actualizacion)
         start_button.clicked.connect(self.reanudar_actualizacion)
-        
+
         start_button.clicked.connect(self.start_camera)
         self.margin_slider = QSlider(Qt.Orientation.Horizontal)
         self.margin_slider.setMinimum(200)
-        self.margin_slider.setMaximum(400)
-        self.margin_slider.setValue(200)  # Puedes establecer el valor inicial
+        self.margin_slider.setMaximum(360)
+        self.margin_slider.setValue(200)
+        self.margin_slider.setSingleStep(5)
         self.margin_slider.valueChanged.connect(self.actualizar_margin)
 
         layout_principalQD.addWidget(self.margin_slider, 3, 1, 1, 2)
 
     def actualizar_margin(self, value):
-        # Esta función se ejecutará cuando cambie el valor del slider
         self.margin = value
-        # Actualizar la variable margin en las funciones update_frame
         self.update_frame2(self.latest_image2)
         self.update_frame3(self.latest_image3)
         self.update_frame4(self.latest_image4)
         self.update_frame5(self.latest_image5)
-        
-        
 
     def update_frame2(self, image2):
         self.latest_image2 = image2
@@ -192,25 +196,23 @@ class MiDockWidget(QWidget):
         self.latest_image4 = image4
         margin = self.margin_slider.value()
         pixmap4 = QPixmap.fromImage(image4)
-        
         pixmap4 = pixmap4.scaled(margin, margin, Qt.AspectRatioMode.KeepAspectRatio)
         self.label4.setPixmap(pixmap4)
-    
+
     def update_frame5(self, image5):
         self.latest_image5 = image5
         margin = self.margin_slider.value()
         pixmap5 = QPixmap.fromImage(image5)
-        
         pixmap5 = pixmap5.scaled(margin, margin, Qt.AspectRatioMode.KeepAspectRatio)
         self.label5.setPixmap(pixmap5)
-    
+
     def start_camera(self):
-        if not self.camera_thread.isRunning():
-            self.camera_thread.start()
+        if not self.hilo_video.isRunning():
+            self.hilo_video.start()
             self.image_processor_thread.start()
 
     def stop_camera(self):
-        if self.camera_thread.isRunning():
+        if self.hilo_video.isRunning():
             self.image_processor_thread.stop()
             self.clear_labels()
 
@@ -229,42 +231,69 @@ class MiDockWidget(QWidget):
         self.stop_camera()
         event.accept()
 
+
+
 class ImageProcessorThread(QThread):
     processed_frame_signal = pyqtSignal(QImage)
     processed_frame_signal1 = pyqtSignal(QImage)
     processed_frame_signal2 = pyqtSignal(QImage)
     processed_frame_signal3 = pyqtSignal(QImage)
-
     pausar_signal = pyqtSignal()
     reanudar_signal = pyqtSignal()
 
-    def __init__(self, get_frame_function):
+    def __init__(self, get_frame_function, mi_dock_widget):
         super().__init__()
         self.running = True
         self.paused = False
         self.get_frame_function = get_frame_function
+        self.mi_dock_widget = mi_dock_widget
+
+        self.presets_combobox = mi_dock_widget.presets_combobox
+
+        # Conectar el evento currentIndexChanged al método update_preset de ImageProcessorThread
+        self.presets_combobox.currentIndexChanged.connect(self.update_preset)
+
+        # Inicializar el preset actual
+        self.current_preset = 0
+
+    def update_preset(self, index):
+        self.current_preset = index
+        self.mi_dock_widget.presets_combobox.setCurrentIndex(index)
+##########################################################################aqui se conectan los sliders
 
     def run(self):
         while self.running:
             frame = self.get_frame_function()
             if frame is not None and frame.size != 0:
                 if not self.paused:
-                    qt_rgb_image = QImage(frame.data, frame.shape[1], frame.shape[0], frame.strides[0], QImage.Format.Format_RGB888)
-                    self.processed_frame_signal.emit(qt_rgb_image)
+                    if self.current_preset == 0:
+                        qt_image_1 = QImage(frame.data, frame.shape[1], frame.shape[0], frame.strides[0], QImage.Format.Format_RGB888)
+                        self.processed_frame_signal.emit(qt_image_1)
 
-                    gray_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-                    qt_gray_image = QImage(gray_frame.data, gray_frame.shape[1], gray_frame.shape[0], gray_frame.strides[0], QImage.Format.Format_Grayscale8)
-                    self.processed_frame_signal1.emit(qt_gray_image)
+                        
+                    
+                    elif self.current_preset == 1:
+                        qt_image_2 = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+                        qt_image_2 = QImage(qt_image_2.data, qt_image_2.shape[1], qt_image_2.shape[0], qt_image_2.strides[0], QImage.Format.Format_RGB888)
+                        self.processed_frame_signal1.emit(qt_image_2)
+                        
+                        qt_image_2 = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+                        qt_image_2 = QImage(qt_image_2.data, qt_image_2.shape[1], qt_image_2.shape[0], qt_image_2.strides[0], QImage.Format.Format_RGB888)
+                        self.processed_frame_signal1.emit(qt_image_2)
 
-                    modified_frame = cv2.applyColorMap(frame, cv2.COLORMAP_JET)
-                    qt_modified_image = QImage(modified_frame.data, modified_frame.shape[1], modified_frame.shape[0], modified_frame.strides[0], QImage.Format.Format_RGB888)
-                    self.processed_frame_signal2.emit(qt_modified_image)
+                        qt_image_2 = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+                        qt_image_2 = QImage(qt_image_2.data, qt_image_2.shape[1], qt_image_2.shape[0], qt_image_2.strides[0], QImage.Format.Format_RGB888)
+                        self.processed_frame_signal1.emit(qt_image_2)
 
-                    oter_frame = cv2.applyColorMap(frame, cv2.COLORMAP_JET)
-                    qt_modified_image2 = QImage(oter_frame.data, oter_frame.shape[1], oter_frame.shape[0], oter_frame.strides[0], QImage.Format.Format_RGB888)
-                    self.processed_frame_signal3.emit(qt_modified_image2)
+                        qt_image_2 = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+                        qt_image_2 = QImage(qt_image_2.data, qt_image_2.shape[1], qt_image_2.shape[0], qt_image_2.strides[0], QImage.Format.Format_RGB888)
+                        self.processed_frame_signal1.emit(qt_image_2)
+                    elif self.current_preset == 2:
+                        qt_image_1 = QImage(frame.data, frame.shape[1], frame.shape[0], frame.strides[0], QImage.Format.Format_RGB888)
+                        self.processed_frame_signal.emit(qt_image_1)
 
-                QThread.msleep(60)
+                        
+                    QThread.msleep(60)
             else:
                 pass
 
@@ -729,12 +758,20 @@ class Ventana_Principal(QMainWindow):
         
 
     def create_ventana_central(self):
-        
+        tab_bar = QTabWidget(self)
+        self.contenedor1 = QWidget()
         
         ventana_video_principal = MiVentana(self.video_thread)
-        
+        tab_bar.addTab(ventana_video_principal,"contenedor1")
+        self.contenedor2 = QWidget()
+        tab_bar.addTab(self.contenedor2,"contenedor2")
+        main_container = QWidget()
+        tab_h_box = QHBoxLayout()
+        tab_h_box.addWidget(tab_bar)
+        main_container.setLayout(tab_h_box)
+        self.setCentralWidget(main_container)
     
-        self.setCentralWidget(ventana_video_principal)
+        
  
     def create_dock_2(self):
         midockwidget = MiDockWidget(self.video_thread)

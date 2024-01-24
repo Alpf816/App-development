@@ -1,5 +1,5 @@
 import sys
-from PyQt6.QtWidgets import (QApplication, QWidget, QLabel, QPushButton, QGridLayout, QDockWidget, QMainWindow,QSlider)
+from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QGridLayout, QDockWidget, QMainWindow,QSlider
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtCore import Qt, QThread, QMutex, QTimer, pyqtSignal, QMutexLocker,pyqtSlot
 import cv2
