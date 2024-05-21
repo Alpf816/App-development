@@ -112,7 +112,6 @@ class SerialControlWidget(QWidget):
                     except KeyError:
                         print(f"KeyError con clave '{key}'. Posible clave mal formateada o no definida.")
                         continue
-                print(sensors)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -481,7 +481,7 @@ class Ventana_Principal(QMainWindow):
 
     ###Aqui termina la parte de la interfaz
     
-    
+    ###Primer intento añadir video
     
 
 

@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (QApplication,
                             QCheckBox)
 
 from PyQt6.QtGui import QImage, QPixmap,QAction,QKeySequence,QGuiApplication, QScreen,QFont
-from PyQt6.QtCore import Qt,QThread, pyqtSignal, QMutex, QMutexLocker,QTimer,QCoreApplication,QTimer
+from PyQt6.QtCore import Qt,QThread, pyqtSignal, QMutex, QMutexLocker,QTimer,QCoreApplication,pyqtSlot
 import cv2
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -48,14 +48,14 @@ class VideoStreamThread(QThread):
     frame_captured = pyqtSignal(np.ndarray)
     
     
-    def __init__(self,input_queue_ROI1,input_queue_ROI2,input_queue_ROI3,input_queue_ROI4):
+    def __init__(self,input_queue_ROI1,input_queue_ROI2,input_queue_ROI3,input_queue_ROI4,imagen_proyeccion):
         super().__init__()
         self.fla1 = True
         self.capturando = False
         self.pausado = False
         self.latest_frame = None
         self.frame_lock = QMutex()
-
+        self.imagen_proyeccion = imagen_proyeccion
         self.O_ROI_1x = None
         self.O_ROI_1y = None
         self.O_ROI_2x = None
@@ -121,6 +121,8 @@ class VideoStreamThread(QThread):
                 with QMutexLocker(self.frame_lock):
                     self.latest_frame = frame
                     #print("frame copiado y enviado")
+                self.lastest_frame = frame
+                self.imagen_proyeccion.put(self.lastest_frame)
 
                 self.frame_video_ventanacentral = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
@@ -166,9 +168,9 @@ class VideoStreamThread(QThread):
                 q_image = QImage(combined_image.data, width_video_capture, height_video_capture, width_video_capture * 3, QImage.Format.Format_RGB888)
                 self.frame_actualizado.emit(q_image)
 
-                QThread.msleep(20)
+                QThread.msleep(30)
                 #fin_iteracion = time.time()
-            QThread.msleep(20)
+            QThread.msleep(30)
             #duracion_iteracion = fin_iteracion - inicio_iteracion
             #tasa_de_fps_aprox = 1/duracion_iteracion
             #print(f'tasa de fps aprox: {tasa_de_fps_aprox} fps')
@@ -584,6 +586,9 @@ class MiDockWidget(QWidget):
         self.label2.clear()
         self.label3.clear()
         self.label4.clear()
+
+    def closeEvent(self, event):
+        self.timer.stop()
 
 
 
@@ -1082,7 +1087,7 @@ class VideoProcessingThread(QThread):
             rvecs_1 = cords_dic_1["rvecs"]
             tvecs_1 = cords_dic_1["tvecs"]
             corners_reales_1 = cords_dic_1["corners_reales"]
-            cords_ROI_1 = corners_reales_1[0]
+            cords_ROI_1 = corners_reales_1[1]
             if flag_creacion_3D:
                 Dictvect["rvecs_1"] = rvecs_1
                 Dictvect["tvecs_1"] = tvecs_1
@@ -1098,7 +1103,7 @@ class VideoProcessingThread(QThread):
             rvecs_2 = cords_dic_2["rvecs"]
             tvecs_2 = cords_dic_2["tvecs"]
             corners_reales_2 = cords_dic_2["corners_reales"]
-            cords_ROI_2 = corners_reales_2[2]
+            cords_ROI_2 = corners_reales_2[0]
             if flag_creacion_3D:
                 Dictvect["rvecs_2"] = rvecs_2
                 Dictvect["tvecs_2"] = tvecs_2
@@ -1113,7 +1118,7 @@ class VideoProcessingThread(QThread):
             rvecs_3 = cords_dic_3["rvecs"]
             tvecs_3 = cords_dic_3["tvecs"]
             corners_reales_3 = cords_dic_3["corners_reales"]
-            cords_ROI_3 = corners_reales_3[3]
+            cords_ROI_3 = corners_reales_3[2]
             if flag_creacion_3D:
                 Dictvect["rvecs_3"] = rvecs_3
                 Dictvect["tvecs_3"] = tvecs_3
@@ -1128,7 +1133,7 @@ class VideoProcessingThread(QThread):
             rvecs_4 = cords_dic_4["rvecs"]
             tvecs_4 = cords_dic_4["tvecs"]
             corners_reales_4 = cords_dic_4["corners_reales"]
-            cords_ROI_4 = corners_reales_4[1]
+            cords_ROI_4 = corners_reales_4[3]
             if flag_creacion_3D:
                 Dictvect["rvecs_4"] = rvecs_4
                 Dictvect["tvecs_4"] = tvecs_4
@@ -1286,133 +1291,141 @@ class SerialControlWidget(QWidget):
                     except KeyError:
                         print(f"KeyError con clave '{key}'. Posible clave mal formateada o no definida.")
                         continue
-
+    def closeEvent(self, event):
+        self.timer.stop()
 #############################################################################################
-class Process_proyecciones(multiprocessing.Process):
-    def __init__(self, matplotlib_iniciado, parametros_vectores,flag_creacion_3D):
+
+class CustomWidget(QWidget):
+    def __init__(self):
         super().__init__()
+
+        # Crear el layout grid para organizar los elementos
+        self.layout = QGridLayout()
+
+        # Crear el label para mostrar los frames
+        self.label = QLabel("Frames")
+        self.layout.addWidget(self.label, 0, 0, 3, 1)  # (fila, columna, rowspan, colspan)
+
+        # Crear botón
+        self.button = QPushButton("Botón")
+        self.layout.addWidget(self.button, 0, 1)
+
+        # Crear los sliders
+        self.slider1 = QSlider(Qt.Orientation.Vertical)
+        self.slider2 = QSlider(Qt.Orientation.Vertical)
+        self.layout.addWidget(self.slider1, 1, 1)
+        self.layout.addWidget(self.slider2, 2, 1)
+
+        # Establecer el layout principal del widget
+        self.setLayout(self.layout)
+
+        # Ocultar el botón y los sliders
+        self.hide_menu()
+
+    def hide_menu(self):
+        # Ocultar el botón y los sliders
+        self.button.setHidden(True)
+        self.slider1.setHidden(True)
+        self.slider2.setHidden(True)
+
+    def show_menu(self):
+        # Mostrar el botón y los sliders
+        self.button.setHidden(False)
+        self.slider1.setHidden(False)
+        self.slider2.setHidden(False)
+
+    def enterEvent(self, event):
+        # Mostrar el menú cuando el cursor entra en el widget
+        self.show_menu()
+
+    def leaveEvent(self, event):
+        # Ocultar el menú cuando el cursor sale del widget
+        self.hide_menu()
+
+
+class Process_proyecciones(multiprocessing.Process):
+    def __init__(self, matplotlib_iniciado, parametros_vectores,flag_creacion_3D,imagen_proyeccion):
+        super().__init__()
+        self.imagen_proyeccion = imagen_proyeccion
         self.flag_creacion_3D = flag_creacion_3D
         self.matplotlib_iniciado = matplotlib_iniciado
         self.parametros_vectores = parametros_vectores
-        self.intervalo_normal = 100  # Intervalo normal de la animación en milisegundos
-        self.intervalo_sin_datos = 1000  # Intervalo de la animación cuando no hay datos en milisegundos
-        self.contador_sin_datos = 0  # Contador para llevar el registro de cuántas veces no se han detectado datos
-        self.max_intentos_sin_datos = 5  # Número máximo de intentos sin datos antes de cambiar el intervalo
-        self.intervalo_actual = self.intervalo_normal  # Intervalo de la animación actual
-
     def run(self):
-        fig = plt.figure(figsize=(10, 5))
-        ax3d = fig.add_subplot(121, projection='3d')
-        ax2d = fig.add_subplot(122)
+        if not self.imagen_proyeccion.empty():
+            frame = self.imagen_proyeccion.get()
 
-        x_data = [-1, 1]
-        y_data = [-1, 1]
-        z_data = [-1, 1]
-        last_color = 'blue'
+        if not self.parametros_vectores.empty():
+            dic_parametros = self.parametros_vectores.get()
+            print(dic_parametros)
+            if "tipo" in dic_parametros:
+                tipo_datos = dic_parametros["tipo"]
+                if tipo_datos == "parametros_vectores":
+                    if "rvecs_1" in dic_parametros and "tvecs_1" in dic_parametros:
+                        rvecs = dic_parametros["rvecs_1"]
+                        tvecs = dic_parametros["tvecs_1"]
+                        corners_reales_1 = dic_parametros["corners_reales_1"]
+                        rvecs_normalized = np.array(rvecs) / np.linalg.norm(rvecs)
+                        tvecs_normalized = np.array(tvecs) / np.linalg.norm(tvecs)
+                        rot_matrix, _ = cv2.Rodrigues(rvecs)
+                        vertices = np.dot(vertices, rot_matrix.T)
+                elif tipo_datos == "otro_diccionario":
+                    print("se recibieron distancias")
+                    distancia_camara_superficie = dic_parametros["distancia_camara_superficie"]
+                    distancia_proyector_superficie = dic_parametros["distancia_proyector_superficie"]
+                    distancia_camara_proyector = dic_parametros["distancia_camara_proyector"]
+                    print("Distancia cámara-superficie:", distancia_camara_superficie)
+                    print("Distancia proyector-superficie:", distancia_proyector_superficie)
+                    print("Distancia cámara-proyector:", distancia_camara_proyector)
 
-        def actualizar(i):
-            try:
-                nonlocal last_color
-
-                ax3d.clear()
-                color = last_color
-                ax3d.plot(x_data, y_data, z_data, color=color)
-
-                vertices = np.array([[1, 1, 0], [-1, 1, 0], [-1, -1, 0], [1, -1, 0], [0, 0, 1]])
-
-                arrow_start = [0, 0, 0]
-                arrow_direction = [0, 0, 2]
-
-                if not self.parametros_vectores.empty():
-                    # Si hay datos, reiniciar el contador y el intervalo
-                    self.contador_sin_datos = 0
-                    self.intervalo_actual = self.intervalo_normal
-                    self.nuevos_datos_recibidos = True
-
-                    dic_parametros = self.parametros_vectores.get()
-                    print(dic_parametros)
-                    if "tipo" in dic_parametros:
-                        tipo_datos = dic_parametros["tipo"]
-                        if tipo_datos == "parametros_vectores":
-                            if "rvecs_1" in dic_parametros and "tvecs_1" in dic_parametros:
-                                rvecs = dic_parametros["rvecs_1"]
-                                tvecs = dic_parametros["tvecs_1"]
-                                corners_reales_1 = dic_parametros["corners_reales_1"]
-                                rvecs_normalized = np.array(rvecs) / np.linalg.norm(rvecs)
-                                tvecs_normalized = np.array(tvecs) / np.linalg.norm(tvecs)
-                                rot_matrix, _ = cv2.Rodrigues(rvecs)
-                                vertices = np.dot(vertices, rot_matrix.T)
-                        elif tipo_datos == "otro_diccionario":
-                            print("se recibieron distancias")
-                            distancia_camara_superficie = dic_parametros["distancia_camara_superficie"]
-                            distancia_proyector_superficie = dic_parametros["distancia_proyector_superficie"]
-                            distancia_camara_proyector = dic_parametros["distancia_camara_proyector"]
-                            print("Distancia cámara-superficie:", distancia_camara_superficie)
-                            print("Distancia proyector-superficie:", distancia_proyector_superficie)
-                            print("Distancia cámara-proyector:", distancia_camara_proyector)
-
-                else:
-                    # Si no hay datos, incrementar el contador
-                    self.contador_sin_datos += 1
-                    # Si el contador alcanza el máximo de intentos sin datos, cambiar el intervalo
-                    if self.contador_sin_datos >= self.max_intentos_sin_datos:
-                        self.intervalo_actual = self.intervalo_sin_datos
-
-                faces = [
-                    [vertices[1], vertices[2], vertices[4]],
-                    [vertices[0], vertices[1], vertices[2], vertices[3]]
-                ]
-
-                ax3d.add_collection3d(Poly3DCollection(faces, facecolors=color, linewidths=1, edgecolors='r', alpha=0.5))
-
-                ax3d.quiver(*arrow_start, *arrow_direction, color=color)
-
-                ax2d.clear()
-                ax2d.set_title('Gráfico 2D')
-                ax2d.set_xlabel('Distancia (m)')
-                ax2d.set_ylabel('Valor')
-
-                distancias = [float(dist1.text), float(dist2.text), float(dist3.text)]
-                valores = [np.sin(d) for d in distancias]
-
-                ax2d.plot(distancias, valores, marker='o', linestyle='-', color='red')
-
-            except Exception as e:
-                print(f"Excepción: {e}")
-
-        ani = FuncAnimation(fig, actualizar, frames=range(100), interval=self.intervalo_actual)
-
-        axtextbox1 = plt.axes([0.9, 0.35, 0.1, 0.075])
-        axtextbox2 = plt.axes([0.9, 0.25, 0.1, 0.075])
-        axtextbox3 = plt.axes([0.9, 0.15, 0.1, 0.075])
-
-        dist1 = TextBox(axtextbox1, 'Distancia 1 (m)', initial='1.0')
-        dist2 = TextBox(axtextbox2, 'Distancia 2 (m)', initial='2.0')
-        dist3 = TextBox(axtextbox3, 'Distancia 3 (m)', initial='3.0')
-
-        axcerrar = plt.axes([0.81, 0.05, 0.1, 0.075])
-        bcerrar = Button(axcerrar, 'Cerrar')
 
         def cerrar(event):
-            plt.close()
             self.flag_creacion_3D = False
             self.matplotlib_iniciado.value = False
-
-        bcerrar.on_clicked(cerrar)
-
-        plt.show()
 #--------------------------------------------------------------------------------------------------------------
 class ProjectionWindow(QWidget):
-    def __init__(self):
+    def __init__(self, get_frame):
         super().__init__()
-        self.initUI()
+        self.setWindowTitle('Cambiar entre Bordes y Sin Bordes')
 
-    def initUI(self):
+        self.button_toggle = QPushButton('Cambiar Modo', self)
+        self.button_toggle.clicked.connect(self.toggle_border_mode)
+
+        self.label = QLabel(self)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         layout = QVBoxLayout()
-        content = QLabel("Contenido para Proyectar")
-        layout.addWidget(content)
+        layout.addWidget(self.button_toggle)
+        layout.addWidget(self.label)
         self.setLayout(layout)
-        self.setWindowTitle("Proyección")
+
+        self.with_border = True
+        self.get_frame = get_frame
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_frame)
+        self.timer.start(50)  # Actualiza cada 100 milisegundos
+
+        self.update_frame()
+
+    def toggle_border_mode(self):
+        self.with_border = not self.with_border
+        if self.with_border:
+            self.setWindowFlag(Qt.WindowType.FramelessWindowHint, False)
+        else:
+            self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.show()
+
+    def update_frame(self):
+        frame = self.get_frame()
+        if frame is not None and frame.size != 0:
+            height, width, channel = frame.shape
+            bytes_per_line = 3 * width
+            qimg = QImage(frame.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
+            self.label.setPixmap(QPixmap.fromImage(qimg))
+    
+    def closeEvent(self, event):
+        self.timer.stop()
+
+
 #--------------------------------------------------------------------------------------------------------------
 
 class Ventana_Principal(QMainWindow):
@@ -1436,8 +1449,9 @@ class Ventana_Principal(QMainWindow):
         self.matplotlib_iniciado = multiprocessing.Value('i', False)
         self.cambio_color_queue = multiprocessing.Queue(maxsize = 5)
         self.parametros_vectores = multiprocessing.Queue(maxsize = 5)
+        self.imagen_proyeccion = multiprocessing.Queue(maxsize = 5)
         self.dic_thread = DICThread()
-        self.video_thread = VideoStreamThread(self.input_queue_ROI1,self.input_queue_ROI2,self.input_queue_ROI3,self.input_queue_ROI4)
+        self.video_thread = VideoStreamThread(self.input_queue_ROI1,self.input_queue_ROI2,self.input_queue_ROI3,self.input_queue_ROI4,self.imagen_proyeccion)
         ###########-----------------------------------------------------------------------------------------
         #estos parametros cambian dependidendo de la camara que se use
             
@@ -1490,16 +1504,15 @@ class Ventana_Principal(QMainWindow):
         self.main_box_dock1.addWidget(cm_ancho_entre_puntos_lineedit, 2, 1)
         self.main_box_dock1.addWidget(cm_alto_entre_puntos_label, 3, 0)
         self.main_box_dock1.addWidget(cm_alto_entre_puntos_lineedit, 3, 1)
+
+
         self.text2 = QLabel("creacion de modelado 3D")
         self.text2.setFixedHeight(20)
         self.text2.setStyleSheet("background-color: #dadada")
         self.main_box_dock1.addWidget(self.text2, 4, 0,1,2)
-        self.btn_matplotlib = QPushButton("iniciar_Process_proyecciones")
-        self.btn_matplotlib.clicked.connect(lambda: self.iniciar_Process_proyecciones(self.matplotlib_iniciado,self.parametros_vectores))
 
         self.btn_cambiar_color = QPushButton("Cambiar Color")
 
-        self.main_box_dock1.addWidget(self.btn_matplotlib, 6, 0,1,1)
         self.main_box_dock1.addWidget(self.btn_cambiar_color, 6, 1,1,1)
         self.text3 = QLabel("distancias")
         self.text3.setFixedHeight(20)
@@ -1578,11 +1591,31 @@ class Ventana_Principal(QMainWindow):
         central_layout.addWidget(self.textbotonera)
         serialwidget = SerialControlWidget()
         central_layout.addWidget(serialwidget)
+        self.textpestaña2 = QLabel("Imagen de proyeccion")
+        self.textpestaña2.setFixedHeight(20)
+        self.textpestaña2.setStyleSheet("background-color: #dadada")
+        central_layout.addWidget(self.textpestaña2)
+        self.btn_imagen_proyeccion = QPushButton("Iniciar_Process_proyecciones")
+        self.btn_imagen_proyeccion.clicked.connect(lambda: self.iniciar_Process_proyecciones(self.matplotlib_iniciado,self.parametros_vectores,self.imagen_proyeccion))
+        central_layout.addWidget(self.btn_imagen_proyeccion)
+        self.CustomWidget = CustomWidget()
+        central_layout.addWidget(self.CustomWidget)
+
+
+
         self.textpestaña = QLabel("Ventana de proyeccion")
         self.textpestaña.setFixedHeight(20)
         self.textpestaña.setStyleSheet("background-color: #dadada")
         central_layout.addWidget(self.textpestaña)
         central_layout.addWidget(open_projection_button)
+        
+
+
+
+
+
+
+
         central_layout.addStretch(1)
         self.contenedor2.setLayout(central_layout)
         tab_h_box = QHBoxLayout()
@@ -1590,20 +1623,27 @@ class Ventana_Principal(QMainWindow):
         main_container.setLayout(tab_h_box)
         self.setCentralWidget(main_container)
         
-
-
+    def iniciar_Process_proyecciones(self,matplotlib_iniciado,parametros_vectores):
+        try:
+            global flag_creacion_3D
+            if not matplotlib_iniciado.value:
+                #flag_creacion_3D = True
+                matplotlib_process = Process_proyecciones(matplotlib_iniciado,parametros_vectores,flag_creacion_3D)
+                matplotlib_process.start()
+                matplotlib_iniciado.value = True
+        except Exception as e:
+            print(f"Excepción INICIAR MATPLOTLIB: {e}")
 
     def open_projection_window(self):
-        self.projection_window = ProjectionWindow()
+        self.projection_window = ProjectionWindow(self.video_thread.get_latest_frame)
         # Obtén la lista de todas las pantallas disponibles
         screens = QGuiApplication.screens()
         if len(screens) > 1:
             # Selecciona la segunda pantalla
             second_screen = screens[1]
-            # Mueve la ventana a la segunda pantalla
-            self.projection_window.move(second_screen.geometry().x(), second_screen.geometry().y())
-        
+            self.projection_window.setGeometry(second_screen.geometry())
         self.projection_window.show()
+
     def create_dock_2(self):
         self.midockwidget = MiDockWidget(self.video_thread,self.dic_thread,self.input_queue_ROI1,self.input_queue_ROI2,self.input_queue_ROI3,self.input_queue_ROI4,self.parametros_vectores)
         self.dock2 = QDockWidget()

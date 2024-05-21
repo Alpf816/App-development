@@ -27,7 +27,7 @@ import cv2
 from queue import Queue
 import numpy as np
 
-class Creadordesliders(QThread):
+class WorkerThread(QThread):
     update_signal = pyqtSignal(str, int)
 
     def __init__(self, sliders):
@@ -44,17 +44,17 @@ class DICThread(QThread):
     actualizar_signal = pyqtSignal(str, int)
     def __init__(self):
         super().__init__()
-        self.diccionario_datos = {'Tonalidad Minima S1': 10, 'Tonalidad Maxima S1': 20, 'Pureza Minima S1': 30,"Pureza Maxima S1": 40,"Luminosidad Minima S1":50,"Luminosidad Maxima S1":60,"Kernel X S1":70,"Kernel Y S1" :80,
-                                  'Tonalidad Minima S2': 10, 'Tonalidad Maxima S2': 20, 'Pureza Minima S2': 30,"Pureza Maxima S2": 40,"Luminosidad Minima S2":50,"Luminosidad Maxima S2":60,"Kernel X S2":70,"Kernel Y S2" :80,
-                                  'Tonalidad Minima S3': 10, 'Tonalidad Maxima S3': 20, 'Pureza Minima S3': 30,"Pureza Maxima S3": 40,"Luminosidad Minima S3":50,"Luminosidad Maxima S3":60,"Kernel X S3":70,"Kernel Y S3" :80,
-                                  'Tonalidad Minima S4': 10, 'Tonalidad Maxima S4': 20, 'Pureza Minima S4': 30,"Pureza Maxima S4": 40,"Luminosidad Minima S4":50,"Luminosidad Maxima S4":60,"Kernel X S4":70,"Kernel Y S4" :80
-                                  }
+        self.diccionario_datos = {'Slider1': 10, 'Slider2': 20, 'Slider3': 30}
     def run(self):
         self.actualizar_signal.connect(self.manejar_actualizacion)
 
     def manejar_actualizacion(self, nombre, valor):
-        #print(f"Nombre y valor almacenados en el hilo secundario - Nombre: {nombre}, Valor: {valor}")
+        print(f"Nombre y valor almacenados en el hilo secundario - Nombre: {nombre}, Valor: {valor}")
         self.diccionario_datos[nombre] = valor
+
+
+
+
 
 class MyMainWindow(QMainWindow):
     
@@ -78,48 +78,32 @@ class MyMainWindow(QMainWindow):
         # Crear pestañas con contenido diferente
         tab1 = QWidget()
         self.sliders_tab1 = self.create_elements(tab1, [
-            {"type": "slider", "name": "Tonalidad Minima S1", "min": 0, "max": 100, "initial_value": 50, "tick_interval": 10},
-            {"type": "slider", "name": "Tonalidad Maxima S1", "min": 0, "max": 200, "initial_value": 100, "tick_interval": 20},
-            {"type": "slider", "name": "Pureza Minima S1", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
-            {"type": "slider", "name": "Pureza Maxima S1", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
-            {"type": "slider", "name": "Luminosidad Minima S1", "min": 0, "max": 100, "initial_value": 50, "tick_interval": 10},
-            {"type": "slider", "name": "Luminosidad Maxima S1", "min": 0, "max": 200, "initial_value": 100, "tick_interval": 20},
-            {"type": "slider", "name": "Kernel X S1", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
-            {"type": "slider", "name": "Kernel Y S1", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5}
+            {"type": "slider", "name": "Slider1", "min": 0, "max": 100, "initial_value": 50, "tick_interval": 10},
+            {"type": "slider", "name": "Slider2", "min": 0, "max": 200, "initial_value": 100, "tick_interval": 20},
+            {"type": "slider", "name": "Slider3", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
+            {"type": "slider", "name": "Slider4", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5}
         ])
 
         tab2 = QWidget()
         self.sliders_tab2 = self.create_elements(tab2, [
-            {"type": "slider", "name": "Tonalidad Minima S2", "min": 0, "max": 100, "initial_value": 50, "tick_interval": 10},
-            {"type": "slider", "name": "Tonalidad Maxima S2", "min": 0, "max": 200, "initial_value": 100, "tick_interval": 20},
-            {"type": "slider", "name": "Pureza Minima S2", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
-            {"type": "slider", "name": "Pureza Maxima S2", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
-            {"type": "slider", "name": "Luminosidad Minima S2", "min": 0, "max": 100, "initial_value": 50, "tick_interval": 10},
-            {"type": "slider", "name": "Luminosidad Maxima S2", "min": 0, "max": 200, "initial_value": 100, "tick_interval": 20},
-            {"type": "slider", "name": "Kernel X S2", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
-            {"type": "slider", "name": "Kernel Y S2", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5}
-        ])
+            {"type": "slider", "name": "Slider1", "min": 0, "max": 100, "initial_value": 50, "tick_interval": 10},
+            {"type": "slider", "name": "Slider2", "min": 0, "max": 200, "initial_value": 100, "tick_interval": 20},
+            {"type": "label", "text": "Label in the middle"},
+            {"type": "slider", "name": "Slider1", "min": 0, "max": 100, "initial_value": 50, "tick_interval": 10},
+            {"type": "slider", "name": "Slider2", "min": 0, "max": 200, "initial_value": 100, "tick_interval": 20}
+                   ])
+
         tab3 = QWidget()
         self.sliders_tab3 = self.create_elements(tab3, [
-            {"type": "slider", "name": "Tonalidad Minima S3", "min": 0, "max": 100, "initial_value": 50, "tick_interval": 10},
-            {"type": "slider", "name": "Tonalidad Maxima S3", "min": 0, "max": 200, "initial_value": 100, "tick_interval": 20},
-            {"type": "slider", "name": "Pureza Minima S3", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
-            {"type": "slider", "name": "Pureza Maxima S3", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
-            {"type": "slider", "name": "Luminosidad Minima S3", "min": 0, "max": 100, "initial_value": 50, "tick_interval": 10},
-            {"type": "slider", "name": "Luminosidad Maxima S3", "min": 0, "max": 200, "initial_value": 100, "tick_interval": 20},
-            {"type": "slider", "name": "Kernel X S3", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
-            {"type": "slider", "name": "Kernel Y S3", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5}
+            {"type": "label", "text": "Label in the middle"},
+            {"type": "slider", "name": "Slider5", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
+            {"type": "slider", "name": "Slider6", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5}
         ])
         tab4 = QWidget()
         self.sliders_tab4 = self.create_elements(tab4, [
-            {"type": "slider", "name": "Tonalidad Minima S4", "min": 0, "max": 100, "initial_value": 50, "tick_interval": 10},
-            {"type": "slider", "name": "Tonalidad Maxima S4", "min": 0, "max": 200, "initial_value": 100, "tick_interval": 20},
-            {"type": "slider", "name": "Pureza Minima S4", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
-            {"type": "slider", "name": "Pureza Maxima S4", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
-            {"type": "slider", "name": "Luminosidad Minima S4", "min": 0, "max": 100, "initial_value": 50, "tick_interval": 10},
-            {"type": "slider", "name": "Luminosidad Maxima S4", "min": 0, "max": 200, "initial_value": 100, "tick_interval": 20},
-            {"type": "slider", "name": "Kernel X S4", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
-            {"type": "slider", "name": "Kernel Y S4", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5}
+            {"type": "label", "text": "Label in the middle"},
+            {"type": "slider", "name": "Slider5", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5},
+            {"type": "slider", "name": "Slider6", "min": 0, "max": 50, "initial_value": 25, "tick_interval": 5}
         ])
         self.tab_Datos = QTableWidget()
         self.tab_Datos.setColumnCount(2)
@@ -139,7 +123,7 @@ class MyMainWindow(QMainWindow):
         self.tab_widget.addTab(tab4, "Tab 4")
         
 
-        self.worker_thread = Creadordesliders({**self.sliders_tab1, **self.sliders_tab2, **self.sliders_tab3})
+        self.worker_thread = WorkerThread({**self.sliders_tab1, **self.sliders_tab2, **self.sliders_tab3})
         self.worker_thread.update_signal.connect(self.handle_slider_change)
         #self.dic_thread.actualizar_signal.connect(self.handle_slider_change)
         self.worker_thread.start()
@@ -216,6 +200,12 @@ class MyMainWindow(QMainWindow):
         self.dic_thread.actualizar_signal.emit(slider_name,value)
         #print("Si_se_envio_señal")
         
+
+    
+
+
+
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
 
