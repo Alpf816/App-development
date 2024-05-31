@@ -21,25 +21,19 @@ from PyQt6.QtWidgets import (QApplication,
                             QRadioButton,
                             QCheckBox)
 
-from PyQt6.QtGui import QImage, QPixmap,QAction,QKeySequence,QGuiApplication, QScreen,QFont,QKeyEvent
+from PyQt6.QtGui import QImage, QPixmap,QAction,QKeySequence,QGuiApplication, QScreen,QFont,QKeyEvent,QIntValidator
 from PyQt6.QtCore import Qt,QThread, pyqtSignal, QMutex, QMutexLocker,QTimer,QCoreApplication,QObject
 import cv2
-from matplotlib import pyplot as plt
-from matplotlib.animation import FuncAnimation
-from matplotlib.widgets import Button, TextBox
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
 import time
 from queue import Queue
 import cv2.aruco as aruco
-import random
 import serial
 #multiprocessing.set_start_method('spawn')
 
 width_video_capture = int
 height_video_capture = int
-
+Resolucion_Camara = False
 
 class VideoStreamThread(QThread):
     frame_actualizado = pyqtSignal(QImage)
@@ -94,15 +88,19 @@ class VideoStreamThread(QThread):
 
     def run(self):
         try:
+            global width_video_capture, height_video_capture,Resolucion_Camara
             coordinate_image_initialized = False
             coordinate_image = None
             Yatengodatos = True
             self.capturando = True
             #cv2.setUseOptimized(False)
             video_stream = cv2.VideoCapture(0)
+            if Resolucion_Camara:
+                video_stream.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                video_stream.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             
             if Yatengodatos:
-                global width_video_capture, height_video_capture
+                
                 width_video_capture = int(video_stream.get(cv2.CAP_PROP_FRAME_WIDTH))
                 height_video_capture = int(video_stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
                 Yatengodatos = False
@@ -1412,11 +1410,11 @@ class CustomWidget(QWidget):
                 frame = self.get_frame.get()
                 if frame is not None and frame.size != 0:
                     # Tamaño deseado
-                    max_width = 300
-                    max_height = 200
+                    max_width = 420
+                    max_height = 300
 
                     # Obtener dimensiones originales
-                    height, width = frame.shape
+                    height, width = frame.shape[:2]
 
                     # Calcular la relación de aspecto y nuevas dimensiones
                     aspect_ratio = width / height
@@ -1433,9 +1431,13 @@ class CustomWidget(QWidget):
                     # Redimensionar el frame manteniendo la relación de aspecto
                     resized_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
-                    # Convertir el frame redimensionado a QImage
-                    bytes_per_line = new_width  # Para imágenes en escala de grises
-                    qimg = QImage(resized_frame.data, new_width, new_height, bytes_per_line, QImage.Format.Format_Grayscale8)
+                    # Detectar el número de canales
+                    if len(resized_frame.shape) == 2:  # Escala de grises
+                        bytes_per_line = new_width  # Para imágenes en escala de grises
+                        qimg = QImage(resized_frame.data, new_width, new_height, bytes_per_line, QImage.Format.Format_Grayscale8)
+                    elif len(resized_frame.shape) == 3:  # Color BGR
+                        bytes_per_line = new_width * 3  # Para imágenes BGR
+                        qimg = QImage(resized_frame.data, new_width, new_height, bytes_per_line, QImage.Format.Format_BGR888)
 
                     # Actualizar el QLabel con la nueva imagen
                     self.label.setPixmap(QPixmap.fromImage(qimg))
@@ -1488,105 +1490,148 @@ class Process_proyecciones(multiprocessing.Process):
         super().__init__()
         self.matplotlib_iniciado = matplotlib_iniciado
         self.parametros_vectores = parametros_vectores
-        self.flag_creacion_3D = flag_creacion_3D
+        #self.flag_creacion_3D = flag_creacion_3D
         self.imagen_proyeccion = imagen_proyeccion
         self.Proyeccion_perforaciones = Proyeccion_perforaciones
         self.aruco_proyeccion = aruco_proyeccion
         self.parametros_botones = parametros_botones
         self.dicionario_general = {}
-        self.marker_5_points = None
-        self.marker_6_points = None
-        self.marker_7_points = None
-        self.marker_8_points = None
+        self.Puntos_Proyectados = {}
+        self.Puntos_Arucos_Reales = {}
+        self.a = 1
         self.flag_interna = True
         print("Proceso de proyección inicializado")
-    
+
+
+        # Load the image once during initialization
+        image1 = cv2.imread('App-development/ENTORNO VIRTUAL PARA GUI/Interfaz_V12/placa de montaje.jpg', cv2.IMREAD_UNCHANGED)
+        if image1 is None:
+            print("Error al leer la imagen.")
+            self.image = None
+        else:
+            bgra_planes = cv2.split(image1)
+            self.image = cv2.merge(bgra_planes[:3])
+            self.image_original = self.image.copy()  # Keep a copy of the original image
+        self.pot1_prev = None
+        self.pot2_prev = None
     def run(self):
-        #print("Proceso de proyección iniciado")
-          # Llama al método init
-
+        self.init()
         while self.flag_interna:
+            
+            
 
-            self.init()
+            try:
+                if not self.parametros_botones.empty():
+                    dic_parametros2 = self.parametros_botones.get()
+                    self.dicionario_general.update(dic_parametros2)
 
-            if not self.parametros_botones.empty():
-                dic_parametros2 = self.parametros_botones.get()
-                self.dicionario_general.update(dic_parametros2)
-                #print(dic_parametros2)
-            if not self.parametros_vectores.empty():
-                dic_parametros = self.parametros_vectores.get()
-                self.dicionario_general.update(dic_parametros)
-                #print(dic_parametros)
+                if not self.parametros_vectores.empty():
+                    dic_parametros = self.parametros_vectores.get()
+                    self.dicionario_general.update(dic_parametros)
+            except:
+                #self.finalizar_process_interno()
+                pass
+
             if 'Opcion' in self.dicionario_general:
                 Alternar_arucoYProyeccion = self.dicionario_general['Opcion']
                 if Alternar_arucoYProyeccion == "A":
-                    if 'Brillo'in self.dicionario_general and 'Contraste'in self.dicionario_general:
+                    if 'Brillo' in self.dicionario_general and 'Contraste' in self.dicionario_general:
                         self.brillo = self.dicionario_general['Brillo']
                         self.contraste = self.dicionario_general['Contraste']
                         self.update_image()
+                        print(self.a)
+                        self.a = self.a + 1
 
-                elif Alternar_arucoYProyeccion == "B":
-                    if self.marker_5_points is not None or self.marker_6_points is not None or self.marker_7_points is not None or self.marker_8_points is not None:
-                        if 'Pot1' in self.dicionario_general:
+                        time.sleep(0.3)
+
+                elif Alternar_arucoYProyeccion == "B" and self.image is not None:
+                    pot1_changed = 'Pot1' in self.dicionario_general and self.dicionario_general['Pot1'] != self.pot1_prev
+                    pot2_changed = 'Pot2' in self.dicionario_general and self.dicionario_general['Pot2'] != self.pot2_prev
+                    print(self.a)
+                    self.a = self.a - 1
+
+                    if 'DI2' in self.dicionario_general:
+                        self.Borrar_linea_EjeY = self.dicionario_general['DI2']
+                    if 'DI3' in self.dicionario_general:
+                        self.Cambiar_area_superficie = self.dicionario_general['DI3']
+                    if 'DI4' in self.dicionario_general:
+                        self.Enviar_datos_B = self.dicionario_general['DI4']
+                    if 'DI5' in self.dicionario_general:
+                        self.Precision = self.dicionario_general['DI5']
+                    if 'DI6' in self.dicionario_general:
+                        self.Enviar_datos_S = self.dicionario_general['DI6']
+                    if 'DI7' in self.dicionario_general:
+                        self.Cambiar_esquina = self.dicionario_general['DI7']
+                    if 'DI8' in self.dicionario_general:
+                        self.Habilitar_linea_EjeY = self.dicionario_general['DI8']
+                    if 'DI9' in self.dicionario_general:
+                        self.Habilitar_linea_EjeX = self.dicionario_general['DI9']
+                    if 'DI10' in self.dicionario_general:
+                        self.Añadir_linea_EjeY = self.dicionario_general['DI10']
+                    if 'DI11' in self.dicionario_general:
+                        self.Borrar_linea_EjeX = self.dicionario_general['DI11']
+                    if 'DI12' in self.dicionario_general:
+                        self.Añadir_linea_EjeX = self.dicionario_general['DI12']
+                    try:
+                        self.Puntos_Arucos_Reales =  self.Generar_Set1_arucos(self.dicionario_general)
+                        print(f"Arucos reales: {self.Puntos_Arucos_Reales}")
+                        print(f"Arucos proyectados: {self.Puntos_Proyectados}")
+                    except Exception as e:
+                        print(f"Error al generar los sets: {e}")
+                    
+                    
+                    if pot1_changed or pot2_changed:
+                        self.image = self.image_original.copy()  # Reset to the original image
+                        if pot1_changed:
                             self.pot1 = self.dicionario_general['Pot1']
-                        if 'Pot2' in self.dicionario_general:
+                            mapped_x = int((self.pot1/1023)*self.image.shape[0])
+                            self.pot1_prev = self.pot1
+                        if pot2_changed:
                             self.pot2 = self.dicionario_general['Pot2']
-                        if 'DI2' in self.dicionario_general:
-                            self.di2 = self.dicionario_general['DI2']
-                        if 'DI3' in self.dicionario_general:
-                            self.di3 = self.dicionario_general['DI3']
-                        if 'DI4' in self.dicionario_general:
-                            self.di4 = self.dicionario_general['DI4']
-                        if 'DI5' in self.dicionario_general:
-                            self.di5 = self.dicionario_general['DI5']
-                        if 'DI6' in self.dicionario_general:
-                            self.di6 = self.dicionario_general['DI6']
-                        if 'DI7' in self.dicionario_general:
-                            self.di7 = self.dicionario_general['DI7']
-                        if 'DI8' in self.dicionario_general:
-                            self.di8 = self.dicionario_general['DI8']
-                        if 'DI9' in self.dicionario_general:
-                            self.di9 = self.dicionario_general['DI9']
-                        if 'DI10' in self.dicionario_general:
-                            self.di10 = self.dicionario_general['DI10']
-                        if 'DI11' in self.dicionario_general:
-                            self.di11 = self.dicionario_general['DI11']
-                        if 'DI12' in self.dicionario_general:
-                            self.di12 = self.dicionario_general['DI12']
-                        if 'corners_reales_1' in self.dicionario_general:
-                            self.corners_reales_1 = self.dicionario_general['corners_reales_1']
-                        if 'corners_reales_2' in self.dicionario_general:
-                            self.corners_reales_2 = self.dicionario_general['corners_reales_2']
-                        if 'corners_reales_3' in self.dicionario_general:
-                            self.corners_reales_3 = self.dicionario_general['corners_reales_3']
-                        if 'corners_reales_4' in self.dicionario_general:
-                            self.corners_reales_4 = self.dicionario_general['corners_reales_4']
+                            mapped_y = int((self.pot2/1023)*self.image.shape[1])
+                            self.pot2_prev = self.pot2
+                        if self.Habilitar_linea_EjeX:
+                            self.draw_x_line(self.image, mapped_x)
+                        if self.Habilitar_linea_EjeY:
+                            self.draw_y_line(self.image, mapped_y)
+                        self.image = self.change_image_corner(self.image, mapped_x, mapped_y)
 
-                    else:
-                        print("No se tienen datos de las esquinas de la proyeccion")
+                        try:
+                            self.aruco_proyeccion.put_nowait(self.image)
+                        except:
+                            pass
+                        
+                    
 
+            time.sleep(0.3)
+        self.finalizar_process_interno()
 
+        
+    def draw_x_line(self,image, x_pos):
+        cv2.line(image, (x_pos, 0), (x_pos, image.shape[0]), (0, 255, 0), 10)
 
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            time.sleep(0.05)
-            #print(self.dicionario_general)
+    def draw_y_line(self,image, y_pos):
+        cv2.line(image, (0, y_pos), (image.shape[1], y_pos), (0, 255, 0), 10)
 
+    def change_image_corner(self,image, x_pos, y_pos):
+        original_pts = np.float32([[0, 0], [image.shape[1], 0], [0, image.shape[0]], [image.shape[1], image.shape[0]]])
+        destination_pts = np.float32([[image.shape[1]*0.05, image.shape[0]*0.08], [image.shape[1]*0.85, image.shape[0]*0.06], [image.shape[1]*0.1, image.shape[0]*0.76], [image.shape[1]*0.95, image.shape[0]*0.9]])
+        matrix = cv2.getPerspectiveTransform(original_pts, destination_pts.astype(np.float32))
+        result = cv2.warpPerspective(image, matrix, (image.shape[1], image.shape[0]))
+        return result
 
-
-
-
-
+    def Generar_Set1_arucos(self,diccionario):
+        arucos_set = {}
+        if 'corners_reales_1' in diccionario:
+            arucos_set[1] = np.array(diccionario['corners_reales_1'])
+        if 'corners_reales_2' in diccionario:
+            arucos_set[2] = np.array(diccionario['corners_reales_2'])
+        if 'corners_reales_3' in diccionario:
+            arucos_set[3] = np.array(diccionario['corners_reales_3'])
+        if 'corners_reales_4' in diccionario:
+            arucos_set[4] = np.array(diccionario['corners_reales_4'])
+        return arucos_set
+    
     def init(self):
         self.brillo = 0
         self.contraste = 0
@@ -1629,16 +1674,23 @@ class Process_proyecciones(multiprocessing.Process):
             corners, ids, rejected = cv2.aruco.detectMarkers(adjusted, self.aruco_dict1, parameters=self.parameters1)
 
             if ids is not None:
-                for i in range(len(ids)):
-                    if 5 <= ids[i] <= 9:  # Solo procesar IDs del 5 al 9
-                        if ids[i] == 5:
-                            self.marker_5_points = corners[i][0]
-                        elif ids[i] == 6:
-                            self.marker_6_points = corners[i][0]
-                        elif ids[i] == 7:
-                            self.marker_7_points = corners[i][0]
-                        elif ids[i] == 8:
-                            self.marker_8_points = corners[i][0]
+                for i, id in enumerate(ids):
+                    puntos_aruco = []  # Reiniciar la lista de puntos_aruco para cada marcador
+                    if 5 <= id <= 9:  # Solo procesar IDs del 5 al 9
+                        for esquina in corners[i]:
+                            for punto in esquina:
+                                puntos_aruco.append((punto[0], punto[1]))
+                        
+                        if id == 5:
+                            self.Puntos_Proyectados[1] = np.array(puntos_aruco)
+                        elif id == 6:
+                            self.Puntos_Proyectados[2] = np.array(puntos_aruco)
+                        elif id == 7:
+                            self.Puntos_Proyectados[3] = np.array(puntos_aruco)
+                        elif id == 8:
+                            self.Puntos_Proyectados[4] = np.array(puntos_aruco)
+
+                                        
 
                         rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(corners[i], 0.05, self.camera_matrix1, self.dist_coeffs1)
                         cv2.aruco.drawDetectedMarkers(adjusted, corners)
@@ -1649,44 +1701,51 @@ class Process_proyecciones(multiprocessing.Process):
             except:
                 pass
 
-
+    
  
 
     def finalizar_process_interno(self):
-        self.flag_creacion_3D = False
         self.flag_interna = False
-        self.matplotlib_iniciado.value = False
+        self.flag_creacion_3D = False
 #--------------------------------------------------------------------------------------------------------------
 class ProjectionWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Cambiar entre Bordes y Sin Bordes')
-
+        self.setWindowTitle('Imagen Sin Bordes')
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
 
         self.label = QLabel(self)
-        self.label.setAlignment(Qt.AlignmentFlag(0))
-        layout = QVBoxLayout()
+        layout = QVBoxLayout(self)
         layout.addWidget(self.label)
         self.setLayout(layout)
 
-        # Carga la imagen y añádela al QLabel
-        pixmap = QPixmap('C:/Users/a/Desktop/python-course/App-development/ENTORNO VIRTUAL PARA GUI/Interfaz_V11/Aruco_6.jpg')
-        if not pixmap.isNull():
-            self.label.setPixmap(pixmap)
-            print("Imagen cargada exitosamente")
-        else:
-            print("Error al cargar la imagen")
+    def update_image(self, image):
+        height, width, channel = image.shape
+        bytes_per_line = 3 * width
+        q_image = QImage(image.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
+        self.label.setPixmap(QPixmap.fromImage(q_image))
 
-        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        self.showFullScreen()  # Mostrar en pantalla completa
+    def adjust_window_position(self):
+        # Obtener la lista de pantallas disponibles
+        screen_list = QGuiApplication.screens()
 
-    def keyPressEvent(self, event: QKeyEvent):
+        # Verificar si hay al menos dos pantallas disponibles
+        if len(screen_list) > 1:
+            # Obtener la geometría de la segunda pantalla
+            second_screen_geometry = screen_list[1].geometry()
+
+            # Calcular la nueva posición de la ventana
+            new_x = int(second_screen_geometry.x() - 11)
+            new_y = int(second_screen_geometry.y() - 11)
+
+            # Establecer la nueva posición de la ventana
+            self.move(new_x, new_y)
+
+    def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:  # Cambiar por la tecla deseada
             self.close()
         else:
             super().keyPressEvent(event)
-
 
 #--------------------------------------------------------------------------------------------------------------
 
@@ -1726,7 +1785,7 @@ class Ventana_Principal(QMainWindow):
 #generacion de UI Principal-----------------------------------------
     def inicializarUI(self):
         self.setGeometry(0,0,1250,750)
-        self.setWindowTitle("Interfaz_v11.3") 
+        self.setWindowTitle("Interfaz_v12.0") 
         self.generate_main_window()
         self.created_actions()
         self.show()
@@ -1762,65 +1821,79 @@ class Ventana_Principal(QMainWindow):
         text1.setStyleSheet("background-color: #dadada")
         self.main_box_dock1.addWidget(text1, 1, 0, 1, 2)
         # Ingreso de datos-----------------------------------------------------------------
-        cm_ancho_entre_puntos_label = QLabel('cm_ancho_entre_puntos:')
-        cm_ancho_entre_puntos_lineedit = QLineEdit()
-        cm_alto_entre_puntos_label = QLabel('cm_alto_entre_puntos:')
-        cm_alto_entre_puntos_lineedit = QLineEdit()
+        #cm_ancho_entre_puntos_label = QLabel('cm_ancho_entre_puntos:')
+        #cm_ancho_entre_puntos_lineedit = QLineEdit()
+        #cm_alto_entre_puntos_label = QLabel('cm_alto_entre_puntos:')
+        #cm_alto_entre_puntos_lineedit = QLineEdit()
 
         # Agregamos los widgets al main_box_dock1
-        self.main_box_dock1.addWidget(cm_ancho_entre_puntos_label, 2, 0)
-        self.main_box_dock1.addWidget(cm_ancho_entre_puntos_lineedit, 2, 1)
-        self.main_box_dock1.addWidget(cm_alto_entre_puntos_label, 3, 0)
-        self.main_box_dock1.addWidget(cm_alto_entre_puntos_lineedit, 3, 1)
+        #self.main_box_dock1.addWidget(cm_ancho_entre_puntos_label, 2, 0)
+        #self.main_box_dock1.addWidget(cm_ancho_entre_puntos_lineedit, 2, 1)
+        #self.main_box_dock1.addWidget(cm_alto_entre_puntos_label, 3, 0)
+        #self.main_box_dock1.addWidget(cm_alto_entre_puntos_lineedit, 3, 1)
 
+        self.btn_cambar_resolucion = QPushButton("Cambiar resolucion")
 
-        self.text2 = QLabel("creacion de modelado 3D")
-        self.text2.setFixedHeight(20)
-        self.text2.setStyleSheet("background-color: #dadada")
-        self.main_box_dock1.addWidget(self.text2, 4, 0,1,2)
-
-        self.btn_cambiar_color = QPushButton("Cambiar Color")
-
-        self.main_box_dock1.addWidget(self.btn_cambiar_color, 6, 1,1,1)
+        
         self.text3 = QLabel("distancias")
         self.text3.setFixedHeight(20)
         self.text3.setStyleSheet("background-color: #dadada")
-        self.main_box_dock1.addWidget(self.text3, 7, 0,1,2)
-        dist_camara_superficie_label = QLabel('Distancia (cámara-superficie):')
-        self.dist_camara_superficie_lineedit = QLineEdit()
-        dist_proyector_superficie_label = QLabel('Distancia (proyector-superficie):')
-        self.dist_proyector_superficie_lineedit = QLineEdit()
-        dist_camara_proyector_label = QLabel('Distancia (cámara-proyector):')
-        self.dist_camara_proyector_lineedit = QLineEdit()
+        self.main_box_dock1.addWidget(self.text3, 6, 0,1,2)
+        dist_camara_superficie_label = QLabel('Tamaño_bandeja_X(mm)')
+        self.tamaño_bandeja_X = QLineEdit()
+        self.tamaño_bandeja_Y = QLineEdit()
+        dist_proyector_superficie_label = QLabel('Tamaño_bandeja_Y(mm):')
+        #self.dist_proyector_superficie_lineedit = QLineEdit()
+        #dist_camara_proyector_label = QLabel('Distancia (cámara-proyector):')
+        #self.dist_camara_proyector_lineedit = QLineEdit()
         boton_inreso_distancias = QPushButton("Calcular")
 
         # Agregamos los widgets al main_box_dock1
-        self.main_box_dock1.addWidget(dist_camara_superficie_label, 8, 0)
-        self.main_box_dock1.addWidget(self.dist_camara_superficie_lineedit, 8, 1)
-        self.main_box_dock1.addWidget(dist_proyector_superficie_label, 9, 0)
-        self.main_box_dock1.addWidget(self.dist_proyector_superficie_lineedit, 9, 1)
-        self.main_box_dock1.addWidget(dist_camara_proyector_label, 10, 0)
-        self.main_box_dock1.addWidget(self.dist_camara_proyector_lineedit, 10, 1)
+        self.main_box_dock1.addWidget(dist_camara_superficie_label, 7, 0)
+        self.main_box_dock1.addWidget(self.tamaño_bandeja_X, 7, 1)
+        self.main_box_dock1.addWidget(self.tamaño_bandeja_Y, 8, 1)
+        self.main_box_dock1.addWidget(dist_proyector_superficie_label, 8, 0)
+        #self.main_box_dock1.addWidget(self.dist_proyector_superficie_lineedit, 9, 1)
+        #self.main_box_dock1.addWidget(dist_camara_proyector_label, 10, 0)
+        #self.main_box_dock1.addWidget(self.dist_camara_proyector_lineedit, 10, 1)
         self.main_box_dock1.addWidget(boton_inreso_distancias, 11, 0,1,2)
-        self.main_box_dock1.setRowStretch(12,1)
+        self.text4 = QLabel("cambiar resolucion de la camara")
+        self.text4.setFixedHeight(20)
+        self.text4.setStyleSheet("background-color: #dadada")
+        self.main_box_dock1.addWidget(self.text4, 12, 0,1,2)
+        self.main_box_dock1.addWidget(self.btn_cambar_resolucion, 13, 0,1,1)
+        self.btn_cambar_resolucion.clicked.connect(self.cambiar_resolucion_camara)
+
+
+
+
+        
+
+
+        self.main_box_dock1.setRowStretch(14,1)
+        
+
         self.dic_thread.start()
         self.contenedor_de_widgets.setLayout(self.main_box_dock1)
         self.dock1.setWidget(self.contenedor_de_widgets)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea,self.dock1)
         boton_inreso_distancias.clicked.connect(self.calcular_distancias)
-    
+
+    def cambiar_resolucion_camara(self):
+        global Resolucion_Camara
+        if Resolucion_Camara:
+            Resolucion_Camara = False
+        elif Resolucion_Camara == False:
+            Resolucion_Camara = True
+
     def calcular_distancias(self):
         # Obtenemos los valores de los LineEdit
-        global distancia_camara_proyector,distancia_camara_superficie,distancia_proyector_superficie
+        global tamaño_bandeja_X,tamaño_bandeja_Y
         try:
-            resultado = {
-                            "distancia_camara_superficie": float(self.dist_camara_superficie_lineedit.text()),
-                            "distancia_proyector_superficie": float(self.dist_proyector_superficie_lineedit.text()),
-                            "distancia_camara_proyector": float(self.dist_camara_proyector_lineedit.text()),
-                            "tipo":"otro_diccionario"
-                        }
-            self.parametros_vectores.put(resultado)
-            print("se envio distancias")
+            tamaño_bandeja_X = float(self.tamaño_bandeja_X.text())
+            tamaño_bandeja_Y = float(self.tamaño_bandeja_Y.text())
+            print(f"se ingresaron distancias:{tamaño_bandeja_X},{tamaño_bandeja_Y}")
+
         except ValueError:
             print("Error: uno o más valores ingresados no son números válidos.")
         
@@ -1842,8 +1915,37 @@ class Ventana_Principal(QMainWindow):
         self.contenedor2 = QWidget()
         tab_bar.addTab(self.contenedor2,"contenedor2")
         main_container = QWidget()
+        self.projection_window = ProjectionWindow()#(self.video_thread.get_latest_frame)
         open_projection_button = QPushButton("Abrir ventana de proyección")
         open_projection_button.clicked.connect(self.open_projection_window)
+        self.sub_image_path = 'App-development/ENTORNO VIRTUAL PARA GUI/Interfaz_V12/Aruco_8.jpg'
+        self.center = (960, 540)  # Centro de la imagen principal
+        self.distance = 150
+        self.aspect_ratio = "1:1"
+
+        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider.setMinimum(100)
+        self.slider.setMaximum(1200)
+        self.slider.setValue(self.distance)
+        self.slider.valueChanged.connect(self.slider_Pocicion_Arucos_proyectados)
+        self.x_input = QLineEdit()
+        self.x_input.setValidator(QIntValidator())
+        self.x_input.setText(str(self.center[0]))
+        self.x_input.setPlaceholderText("Posición X")
+        self.x_input.textChanged.connect(self.update_center_x)
+        
+
+        self.y_input = QLineEdit()
+        self.y_input.setValidator(QIntValidator())
+        self.y_input.setText(str(self.center[1]))
+        self.y_input.setPlaceholderText("Posición Y")
+        self.y_input.textChanged.connect(self.update_center_y)
+
+        self.aspect_ratio_box = QComboBox()
+        self.aspect_ratio_box.addItems(["1:1", "16:9","Automatico"])
+        self.aspect_ratio_box.currentIndexChanged.connect(self.update_aspect_ratio)
+
+
         central_layout = QVBoxLayout()
         self.textbotonera = QLabel("Botonera")
         self.textbotonera.setFixedHeight(20)
@@ -1870,6 +1972,13 @@ class Ventana_Principal(QMainWindow):
         self.textpestaña.setStyleSheet("background-color: #dadada")
         central_layout.addWidget(self.textpestaña)
         central_layout.addWidget(open_projection_button)
+        position_layout = QHBoxLayout()
+        position_layout.addWidget(self.x_input)
+        position_layout.addWidget(self.y_input)
+
+        central_layout.addLayout(position_layout)
+        central_layout.addWidget(self.slider)
+        central_layout.addWidget(self.aspect_ratio_box)
         #Aqui poner la imagen de proyeccion "Proyeccion_perforaciones"
         
         
@@ -1886,6 +1995,60 @@ class Ventana_Principal(QMainWindow):
         main_container.setLayout(tab_h_box)
         self.setCentralWidget(main_container)
 
+    def update_aspect_ratio(self):
+        self.aspect_ratio = self.aspect_ratio_box.currentText()
+
+    def update_center_x(self, text):
+        if text:
+            self.center = (int(text), self.center[1])
+
+    def update_center_y(self, text):
+        if text:
+            self.center = (self.center[0], int(text))
+
+    def slider_Pocicion_Arucos_proyectados(self, value):
+        self.distance = value
+
+
+    def process_image(self, sub_image_path, center, distance, aspect_ratio):
+        # Crear una imagen en blanco
+        image_width = 1920
+        image_height = 1080
+        main_image = np.ones((image_height, image_width, 3), dtype=np.uint8) * 255
+        sub_image = cv2.imread(sub_image_path)
+
+        sub_height, sub_width, _ = sub_image.shape
+
+        if aspect_ratio == "16:9":
+            distance_y = int(distance * 9 / 16)
+        elif aspect_ratio == "Automatico":
+            try:
+                global tamaño_bandeja_X,tamaño_bandeja_Y
+                distance_y = int(distance*(tamaño_bandeja_Y/tamaño_bandeja_X))
+                
+            except Exception as e:
+                print(f"Verifica que se coloquen medidas de la bandeja--- Error:{e}")      
+                distance_y = distance  
+        else:
+            distance_y = distance
+        
+        if distance_y is not None:
+            positions = [
+                (center[0] - sub_width // 2, center[1] - distance_y - sub_height // 2),  # Arriba
+                (center[0] - sub_width // 2, center[1] + distance_y - sub_height // 2),  # Abajo
+                (center[0] - distance - sub_width // 2, center[1] - sub_height // 2),  # Izquierda
+                (center[0] + distance - sub_width // 2, center[1] - sub_height // 2)   # Derecha
+            ]
+
+            for pos in positions:
+                x, y = pos
+                if 0 <= x < main_image.shape[1] - sub_width and 0 <= y < main_image.shape[0] - sub_height:
+                    main_image[y:y + sub_height, x:x + sub_width] = sub_image
+            center_x, center_y = center
+            cv2.line(main_image, (center_x - 10, center_y), (center_x + 10, center_y), (0, 0, 0), 1)  # Línea horizontal
+            cv2.line(main_image, (center_x, center_y - 10), (center_x, center_y + 10), (0, 0, 0), 1)  # Línea vertical
+
+            return main_image
         
     def iniciar_Process_proyecciones(self,matplotlib_iniciado,parametros_vectores,imagen_proyeccion,Proyeccion_perforaciones,aruco_proyeccion,parametros_botones):
 
@@ -1903,14 +2066,12 @@ class Ventana_Principal(QMainWindow):
 
 
     def open_projection_window(self):
-        self.projection_window = ProjectionWindow()#(self.video_thread.get_latest_frame)
-        # Obtén la lista de todas las pantallas disponibles
-        screens = QGuiApplication.screens()
-        if len(screens) > 1:
-            # Selecciona la segunda pantalla
-            second_screen = screens[1]
-            self.projection_window.setGeometry(second_screen.geometry())
+        
+        
+        image = self.process_image(self.sub_image_path, self.center, self.distance, self.aspect_ratio)
+        self.projection_window.update_image(image)
         self.projection_window.show()
+        self.projection_window.adjust_window_position()  
 
     def create_dock_2(self):
         self.midockwidget = MiDockWidget(self.video_thread,self.dic_thread,self.input_queue_ROI1,self.input_queue_ROI2,self.input_queue_ROI3,self.input_queue_ROI4,self.parametros_vectores)
@@ -2008,8 +2169,8 @@ if __name__ == '__main__':
     XYZ_Calculados_P3 = None
     XYZ_Calculados_P4 = None
     flag_creacion_3D = False
-    distancia_camara_superficie = None
-    distancia_proyector_superficie = None
+    tamaño_bandeja_X = None
+    tamaño_bandeja_Y = None
     distancia_camara_proyector = None
     Dictvect = {}
     datos_botonera_sliders = {}

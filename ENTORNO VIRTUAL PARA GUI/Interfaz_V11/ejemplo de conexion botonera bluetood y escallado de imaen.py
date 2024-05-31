@@ -1,120 +1,85 @@
-import sys
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QGridLayout, QCheckBox, QSlider
-from PyQt6.QtCore import QTimer, Qt
-import serial
+import cv2
+import numpy as np
+from PyQt6.QtWidgets import QApplication, QMainWindow, QSlider, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
-class SerialControlWidget(QWidget):
+# Función para dibujar una línea de ayuda en el eje X
+def draw_x_line(image, x_pos):
+    cv2.line(image, (x_pos, 0), (x_pos, image.shape[0]), (0, 255, 0), 10)
+
+# Función para dibujar una línea de ayuda en el eje Y
+def draw_y_line(image, y_pos):
+    cv2.line(image, (0, y_pos), (image.shape[1], y_pos), (0, 255, 0), 10)
+
+# Función para cambiar la esquina de la imagen
+def change_image_corner(image, x_pos, y_pos):
+    # Definir las coordenadas de los puntos de la imagen original
+    original_pts = np.float32([[0, 0], [image.shape[1], 0], [0, image.shape[0]], [image.shape[1], image.shape[0]]])
+    
+    # Definir las coordenadas de los puntos de destino (nueva esquina)
+    destination_pts = np.float32([[image.shape[1]*x_pos[0], image.shape[0]*y_pos[0]],
+                                   [image.shape[1]*x_pos[1], image.shape[0]*y_pos[1]],
+                                   [image.shape[1]*x_pos[2], image.shape[0]*y_pos[2]],
+                                   [image.shape[1]*x_pos[3], image.shape[0]*y_pos[3]]])
+    
+    # Calcular la matriz de transformación
+    matrix = cv2.getPerspectiveTransform(original_pts, destination_pts)
+    
+    # Aplicar la transformación de perspectiva
+    result = cv2.warpPerspective(image, matrix, (image.shape[1], image.shape[0]))
+    
+    return result
+
+class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # Inicialización de la conexión serial, inicialmente no conectado.
-        self.ser = None
+        # Crear los sliders
+        self.x_sliders = [QSlider(Qt.Orientation.Horizontal) for _ in range(4)]
+        self.y_sliders = [QSlider(Qt.Orientation.Horizontal) for _ in range(4)]
+        
+        # Configurar los sliders
+        for slider in self.x_sliders + self.y_sliders:
+            slider.setMinimum(0)
+            slider.setMaximum(100)
+            slider.setValue(50)
+            slider.setTickInterval(1)
+            slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+            slider.valueChanged.connect(self.update_image)
 
-        self.initUI()
+        # Crear el layout vertical para los sliders
+        layout = QVBoxLayout()
+        for i in range(4):
+            layout.addWidget(self.x_sliders[i])
+            layout.addWidget(self.y_sliders[i])
 
-    def initUI(self):
-        self.setWindowTitle("Control de Botonera y Potenciómetros")
-        self.setGeometry(100, 100, 600, 400)  # Adjusted size to be less wide
+        # Crear el widget central
+        central_widget = QWidget()
+        central_widget.setLayout(layout)
+        self.setCentralWidget(central_widget)
 
-        grid_layout = QGridLayout(self)
+        # Leer la imagen
+        self.image = cv2.imread('App-development/ENTORNO VIRTUAL PARA GUI/Interfaz_V11/placa de montaje.jpg', cv2.IMREAD_UNCHANGED)
+        if self.image is not None:
+            # Separar la imagen y el canal alfa
+            bgra_planes = cv2.split(self.image)
+            self.image = cv2.merge(bgra_planes[:3])
 
-        # Sliders para los potenciómetros
-        self.sliders = {
-            'Pot1': QSlider(Qt.Orientation.Horizontal),
-            'Pot2': QSlider(Qt.Orientation.Horizontal)
-        }
-        self.sliders['Pot1'].setRange(0, 1023)
-        self.sliders['Pot2'].setRange(0, 1023)
-        grid_layout.addWidget(QLabel("Potenciómetro 1"), 0, 0)
-        grid_layout.addWidget(self.sliders['Pot1'], 0, 1, 1, 6)  # Span 6 columns
-        grid_layout.addWidget(QLabel("Potenciómetro 2"), 1, 0)
-        grid_layout.addWidget(self.sliders['Pot2'], 1, 1, 1, 6)  # Span 6 columns
+        # Timer para actualizar la imagen
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_image)
+        self.timer.start(100)
 
-        # Botones para entradas digitales con nombres específicos
-        self.buttons = {}
-        button_names = [
-            ('DI2', 'Borrar Línea\nEje Y'), ('DI3', 'Cambiar Área\nde Superficie'), 
-            ('DI4', 'Enviar\nDatos'), ('DI5', 'Precisión'), 
-            ('DI6', 'Enviar\nDatos'), ('DI7', 'Cambiar\nEsquina'), 
-            ('DI8', 'Línea de Ayuda\nEje Y'), ('DI9', 'Línea de Ayuda\nEje X'), 
-            ('DI10', 'Añadir Línea\nEje Y'), ('DI11', 'Borrar Línea\nEje X'), 
-            ('DI12', 'Añadir Línea\nEje X')
-        ]
+    def update_image(self):
+        x_pos = [slider.value() / 100 for slider in self.x_sliders]
+        y_pos = [slider.value() / 100 for slider in self.y_sliders]
+        if self.image is not None:
+            updated_image = change_image_corner(self.image, x_pos, y_pos)
+            cv2.imshow('Modified Image', updated_image)
+            cv2.waitKey(1)
 
-        start_row = 3  # Start from the third row
-        num_columns = 6
-        for i, (key, name) in enumerate(button_names):
-            button = QPushButton(name)
-            button.setCheckable(True)
-            button.clicked.connect(lambda checked, k=key: self.toggle_button(k, checked))
-            self.update_button_style(button, 'False')
-            self.buttons[key] = button
-            # Place button in grid: calculate row and column
-            row = start_row + i // num_columns
-            col = i % num_columns
-            grid_layout.addWidget(button, row, col)
-
-        # Selector para activar/desactivar la conexión serial
-        self.serial_switch = QCheckBox("Activar Conexión Serial")
-        self.serial_switch.setChecked(False)
-        self.serial_switch.toggled.connect(self.toggle_serial_connection)
-        grid_layout.addWidget(self.serial_switch, row + 1, 0, 1, num_columns)  # Span across all columns used for buttons
-
-        self.timer = QTimer(self)
-        self.timer.setInterval(100)
-        self.timer.timeout.connect(self.update_data)
-
-    def toggle_serial_connection(self, checked):
-        if checked:
-            try:
-                self.ser = serial.Serial("COM4", 9600, timeout=1)
-                if not self.ser.isOpen():
-                    raise Exception("No se pudo abrir el puerto serial.")
-                self.timer.start()
-                print("Conexión serial activada.")
-            except Exception as e:
-                print(f"Error al abrir el puerto serial: {e}")
-                self.serial_switch.setChecked(False)
-        else:
-            if self.ser:
-                self.ser.close()
-            self.timer.stop()
-            print("Conexión serial desactivada.")
-
-    def toggle_button(self, key, checked):
-        button = self.buttons[key]
-        self.update_button_style(button, 'True' if checked else 'False')
-
-    def update_button_style(self, button, value):
-        if value == 'True':
-            button.setStyleSheet("background-color: green; color: white;")
-            button.setText(f"{button.text().split(':')[0]}: Activado")
-        else:
-            button.setStyleSheet("background-color: red; color: white;")
-            button.setText(f"{button.text().split(':')[0]}")
-
-    def update_data(self):
-        if self.ser and self.ser.in_waiting > 0:
-            data = self.ser.readline().decode('ascii').strip()
-            if data:
-                #print("Datos recibidos:", data)
-                sensors = data.split(',')
-                for sensor in sensors:
-                    try:
-                        key, value = sensor.strip().split(':')
-                        if key.startswith('Pot') and key in self.sliders:
-                            self.sliders[key].setValue(int(value))
-                        elif key in self.buttons:
-                            self.update_button_style(self.buttons[key], 'True' if value == '0' else 'False')
-                    except ValueError:
-                        print(f"Error en el formato de datos recibidos: '{sensor}'")
-                        continue
-                    except KeyError:
-                        print(f"KeyError con clave '{key}'. Posible clave mal formateada o no definida.")
-                        continue
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    ex = SerialControlWidget()
-    ex.show()
-    sys.exit(app.exec())
+if __name__ == '__main__':
+    app = QApplication([])
+    window = MainWindow()
+    window.show()
+    app.exec()

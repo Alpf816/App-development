@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+
 # Función para dibujar una línea de ayuda en el eje X
 def draw_x_line(image, x_pos):
     cv2.line(image, (x_pos, 0), (x_pos, image.shape[0]), (0, 255, 0), 10)
@@ -11,7 +12,7 @@ def draw_y_line(image, y_pos):
 # Función para cambiar la esquina de la imagen
 def change_image_corner(image, x_pos, y_pos):
     # Definir las coordenadas de los puntos de la imagen original
-    original_pts = np.float32([[0, 0], [image.shape[1], 0], [0, image.shape[0]], [image.shape[1], image.shape[0]]])
+    original_pts = np.float32([[0, 0], [image.shape[1]-100, 0], [0, image.shape[0]-100], [image.shape[1]+400, image.shape[0]-100]])
     
     # Definir las coordenadas de los puntos de destino (nueva esquina)
     destination_pts = np.float32([[image.shape[1]*0.05, image.shape[0]*0.08],[image.shape[1]*0.85, image.shape[0]*0.06],[image.shape[1]*0.1, image.shape[0]*0.76],[image.shape[1]*0.95, image.shape[0]*0.9]])
@@ -23,6 +24,7 @@ def change_image_corner(image, x_pos, y_pos):
     result = cv2.warpPerspective(image, matrix, (image.shape[1], image.shape[0]))
     
     return result
+
 # Leer la imagen
 image1 = cv2.imread('App-development/ENTORNO VIRTUAL PARA GUI/Interfaz_V10 + Proyecciones y Aloritmos con aruco sin matplotlab/Placa de montaje1.png', cv2.IMREAD_UNCHANGED)
 if image1 is None:
@@ -31,7 +33,6 @@ else:
     # Separar la imagen y el canal alfa
     bgra_planes = cv2.split(image1)
     image = cv2.merge(bgra_planes[:3])
-#image = cv2.resize(rgba_image, (800, int(800 / rgba_image.shape[1] * rgba_image.shape[0])))
 
 # Obtener datos de Arduino (simulado)
 pot1_value = 700
@@ -54,7 +55,9 @@ if enable_y_line:
 if change_corner:
     # Aplicar la transformación de la esquina de la imagen
     image = change_image_corner(image, mapped_x, mapped_y)
+
 image = cv2.resize(image, (800, int(800 / image.shape[1] * image.shape[0])))
+
 # Mostrar la imagen modificada
 cv2.imshow('Modified Image', image)
 cv2.waitKey(0)

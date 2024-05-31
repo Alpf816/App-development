@@ -18,28 +18,23 @@ from PyQt6.QtWidgets import (QApplication,
                             QTableWidget,
                             QTableWidgetItem,
                             QHeaderView,
-                            QRadioButton,
                             QCheckBox)
 
 from PyQt6.QtGui import QImage, QPixmap,QAction,QKeySequence,QGuiApplication, QScreen,QFont,QKeyEvent
-from PyQt6.QtCore import Qt,QThread, pyqtSignal, QMutex, QMutexLocker,QTimer,QCoreApplication,QObject
+from PyQt6.QtCore import Qt,QThread, pyqtSignal, QMutex, QMutexLocker,QTimer
 import cv2
-from matplotlib import pyplot as plt
-from matplotlib.animation import FuncAnimation
-from matplotlib.widgets import Button, TextBox
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
 import time
 from queue import Queue
 import cv2.aruco as aruco
-import random
+
 import serial
+import psutil
 #multiprocessing.set_start_method('spawn')
 
 width_video_capture = int
 height_video_capture = int
-
+Variable_General = True
 
 class VideoStreamThread(QThread):
     frame_actualizado = pyqtSignal(QImage)
@@ -100,6 +95,8 @@ class VideoStreamThread(QThread):
             self.capturando = True
             #cv2.setUseOptimized(False)
             video_stream = cv2.VideoCapture(0)
+            video_stream.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            video_stream.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             
             if Yatengodatos:
                 global width_video_capture, height_video_capture
@@ -306,7 +303,7 @@ class VideoWidget(QWidget):
         self.table_data_ROI = {}
         self.table_widget = QTableWidget(4, 4)  # 4 filas x 4 columnas
         datos = [
-            ["0", "0", "210", "210"],
+            ["250", "250", "500", "500"],
             ["0", "210",  "0", "210"],
             ["210", "210", "210","210"],
             ["210", "210", "210","210"]
@@ -481,13 +478,14 @@ class MiVentana(QWidget):
     def hilo_finalizado(self):
         print("Captura finalizada")
 class MiDockWidget(QWidget):
-    def __init__(self, video_thread,dic_thread,input_queue_ROI1,input_queue_ROI2,input_queue_ROI3,input_queue_ROI4,parametros_vectores):
+    def __init__(self, video_thread,dic_thread,input_queue_ROI1,input_queue_ROI2,input_queue_ROI3,input_queue_ROI4,parametros_vectores,Iniciar_process_proyecciones):
         super().__init__()
         self.input_queue_ROI1 = input_queue_ROI1
         self.input_queue_ROI2 = input_queue_ROI2
         self.input_queue_ROI3 = input_queue_ROI3
         self.input_queue_ROI4 = input_queue_ROI4
         self.parametros_vectores = parametros_vectores
+        self.Iniciar_process_proyecciones = Iniciar_process_proyecciones
         self.dic_thread = dic_thread
         self.hilo_video = video_thread
         self.presets_combobox = QComboBox(self)
@@ -573,12 +571,34 @@ class MiDockWidget(QWidget):
         if not self.hilo_video.isRunning():
             self.hilo_video.start()
             self.image_processor_thread.start()
+            #self.Iniciar_process_proyeccion(self.Iniciar_process_proyecciones)
         if self.hilo_video.isRunning() and not self.image_processor_thread.isRunning():
             self.image_processor_thread.start()
 
     def stop_camera(self):
         self.image_processor_thread.finalizar_process()
         self.image_processor_thread.stop1()
+
+    def Iniciar_process_proyeccion(self,matplotlipprocess):
+        #flag_creacion_3D = True
+        global Variable_General
+        cpu_percent = psutil.cpu_percent(interval=1)
+        print(cpu_percent)
+        if cpu_percent <= 25:
+            self.matplotlib_process = matplotlipprocess
+            try:
+                if not self.matplotlib_process.is_alive() and self.matplotlib_process is not None:
+                    time.sleep(5)
+                    self.matplotlib_process.start()
+
+                print("Proceso matplotlib_process iniciado.") # Salir del bucle si el proceso se ha iniciado correctamente
+
+            except Exception as e:
+                print(f"No se pudo iniciar matplotlib_process: {e}")
+        else:
+            print(f"Uso de CPU alto ({cpu_percent}%), esperando para iniciar el proceso...")
+            #time.sleep(5)  # Esperar 5 segundos antes de volver a verificar el uso de la CPU
+
 
     
 
@@ -1050,7 +1070,7 @@ class VideoProcess(multiprocessing.Process):
                             corners_reales.append((int(x) + int(self.O_ROI_X), int(y) + int(self.O_ROI_Y)))
 
                     rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers([corners[i]], 0.05, self.camera_matrix, self.distortion_parameters)
-                    self.Dict_pose = {"rvecs": rvecs, "tvecs": tvecs, "corners_reales": corners_reales}
+                    self.Dict_pose = { "corners_reales": corners_reales}
 
                     cv2.drawFrameAxes(frame, self.camera_matrix, self.distortion_parameters, rvecs[0], tvecs[0], 0.1)
                     self.detected_count += 1
@@ -1089,13 +1109,13 @@ class VideoProcessingThread(QThread):
         global cords_ROI_1,cords_ROI_2, cords_ROI_3, cords_ROI_4,flag_creacion_3D,Dictvect
         if Valor_process == 1:
             cords_dic_1 = dic_roi.get()
-            rvecs_1 = cords_dic_1["rvecs"]
-            tvecs_1 = cords_dic_1["tvecs"]
+            #rvecs_1 = cords_dic_1["rvecs"]
+            #tvecs_1 = cords_dic_1["tvecs"]
             corners_reales_1 = cords_dic_1["corners_reales"]
             cords_ROI_1 = corners_reales_1[0]
             if flag_creacion_3D:
-                Dictvect["rvecs_1"] = rvecs_1
-                Dictvect["tvecs_1"] = tvecs_1
+                #Dictvect["rvecs_1"] = rvecs_1
+                #Dictvect["tvecs_1"] = tvecs_1
                 Dictvect["corners_reales_1"] = corners_reales_1
                 Dictvect["tipo"] = str("parametros_vectores")
                 
@@ -1105,13 +1125,13 @@ class VideoProcessingThread(QThread):
                     pass
         elif Valor_process == 2:
             cords_dic_2 = dic_roi.get()
-            rvecs_2 = cords_dic_2["rvecs"]
-            tvecs_2 = cords_dic_2["tvecs"]
+            #rvecs_2 = cords_dic_2["rvecs"]
+            #tvecs_2 = cords_dic_2["tvecs"]
             corners_reales_2 = cords_dic_2["corners_reales"]
             cords_ROI_2 = corners_reales_2[2]
             if flag_creacion_3D:
-                Dictvect["rvecs_2"] = rvecs_2
-                Dictvect["tvecs_2"] = tvecs_2
+                #Dictvect["rvecs_2"] = rvecs_2
+                #Dictvect["tvecs_2"] = tvecs_2
                 Dictvect["corners_reales_2"] = corners_reales_2
                 Dictvect["tipo"] = str("parametros_vectores")
                 try:
@@ -1120,13 +1140,13 @@ class VideoProcessingThread(QThread):
                     pass
         elif Valor_process == 3:
             cords_dic_3 = dic_roi.get()
-            rvecs_3 = cords_dic_3["rvecs"]
-            tvecs_3 = cords_dic_3["tvecs"]
+            #rvecs_3 = cords_dic_3["rvecs"]
+            #tvecs_3 = cords_dic_3["tvecs"]
             corners_reales_3 = cords_dic_3["corners_reales"]
             cords_ROI_3 = corners_reales_3[3]
             if flag_creacion_3D:
-                Dictvect["rvecs_3"] = rvecs_3
-                Dictvect["tvecs_3"] = tvecs_3
+                #Dictvect["rvecs_3"] = rvecs_3
+                #Dictvect["tvecs_3"] = tvecs_3
                 Dictvect["corners_reales_3"] = corners_reales_3
                 Dictvect["tipo"] = str("parametros_vectores")
                 try:
@@ -1135,13 +1155,13 @@ class VideoProcessingThread(QThread):
                     pass
         elif Valor_process == 4:
             cords_dic_4 = dic_roi.get()
-            rvecs_4 = cords_dic_4["rvecs"]
-            tvecs_4 = cords_dic_4["tvecs"]
+            #rvecs_4 = cords_dic_4["rvecs"]
+            #tvecs_4 = cords_dic_4["tvecs"]
             corners_reales_4 = cords_dic_4["corners_reales"]
             cords_ROI_4 = corners_reales_4[0]
             if flag_creacion_3D:
-                Dictvect["rvecs_4"] = rvecs_4
-                Dictvect["tvecs_4"] = tvecs_4
+                #Dictvect["rvecs_4"] = rvecs_4
+                #Dictvect["tvecs_4"] = tvecs_4
                 Dictvect["corners_reales_4"] = corners_reales_4
                 Dictvect["tipo"] = str("parametros_vectores")
                 try:
@@ -1185,7 +1205,7 @@ class DICThread(QThread):
     def stop(self):
         self.quit()  # This will exit the thread's event loop
         self.wait()
-        print("dictread finalizado")  
+        print("dictread finalizado")
 
 class SerialThread(QThread):
     data_received = pyqtSignal(str)
@@ -1301,21 +1321,29 @@ class SerialControlWidget(QWidget):
             button.setText(f"{button.text().split(':')[0]}")
 
     def update_data(self, data):
+        global datos_botonera_sliders
         print("Datos recibidos:", data)
         sensors = data.split(',')
+        updated_data = {}
         for sensor in sensors:
             try:
                 key, value = sensor.strip().split(':')
                 if key.startswith('Pot') and key in self.sliders:
                     self.sliders[key].setValue(int(value))
+                    updated_data[key] = int(value)
                 elif key in self.buttons:
+                    button_value = True if value == '0' else False
                     self.update_button_style(self.buttons[key], 'True' if value == '0' else 'False')
+                    updated_data[key] = button_value
             except ValueError:
                 print(f"Error en el formato de datos recibidos: '{sensor}'")
                 continue
             except KeyError:
                 print(f"KeyError con clave '{key}'. Posible clave mal formateada o no definida.")
                 continue
+        
+        # Actualizar datos_botonera_sliders
+        datos_botonera_sliders.update(updated_data)
 
     def emit_data_changed1(self):
         global datos_botonera_sliders
@@ -1334,6 +1362,7 @@ class SerialControlWidget(QWidget):
         # Obtener valores de los sliders
         data['Pot1'] = self.sliders['Pot1'].value()
         data['Pot2'] = self.sliders['Pot2'].value()
+        #print(data)
         # Obtener estado de los botones
         for key, button in self.buttons.items():
             data[key] = button.isChecked()
@@ -1412,11 +1441,11 @@ class CustomWidget(QWidget):
                 frame = self.get_frame.get()
                 if frame is not None and frame.size != 0:
                     # Tamaño deseado
-                    max_width = 300
-                    max_height = 200
+                    max_width = 500
+                    max_height = 300
 
                     # Obtener dimensiones originales
-                    height, width = frame.shape
+                    height, width = frame.shape[:2]
 
                     # Calcular la relación de aspecto y nuevas dimensiones
                     aspect_ratio = width / height
@@ -1433,9 +1462,13 @@ class CustomWidget(QWidget):
                     # Redimensionar el frame manteniendo la relación de aspecto
                     resized_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
-                    # Convertir el frame redimensionado a QImage
-                    bytes_per_line = new_width  # Para imágenes en escala de grises
-                    qimg = QImage(resized_frame.data, new_width, new_height, bytes_per_line, QImage.Format.Format_Grayscale8)
+                    # Detectar el número de canales
+                    if len(resized_frame.shape) == 2:  # Escala de grises
+                        bytes_per_line = new_width  # Para imágenes en escala de grises
+                        qimg = QImage(resized_frame.data, new_width, new_height, bytes_per_line, QImage.Format.Format_Grayscale8)
+                    elif len(resized_frame.shape) == 3:  # Color BGR
+                        bytes_per_line = new_width * 3  # Para imágenes BGR
+                        qimg = QImage(resized_frame.data, new_width, new_height, bytes_per_line, QImage.Format.Format_BGR888)
 
                     # Actualizar el QLabel con la nueva imagen
                     self.label.setPixmap(QPixmap.fromImage(qimg))
@@ -1484,108 +1517,125 @@ class CustomWidget(QWidget):
 
 
 class Process_proyecciones(multiprocessing.Process):
-    def __init__(self, matplotlib_iniciado, parametros_vectores, flag_creacion_3D, imagen_proyeccion, Proyeccion_perforaciones, aruco_proyeccion, parametros_botones):
+    def __init__(self, matplotlib_iniciado, parametros_vectores, imagen_proyeccion, Proyeccion_perforaciones, aruco_proyeccion, parametros_botones,start_ProyeccionP_event):
         super().__init__()
+        self.start_ProyeccionP_event = start_ProyeccionP_event
         self.matplotlib_iniciado = matplotlib_iniciado
         self.parametros_vectores = parametros_vectores
-        self.flag_creacion_3D = flag_creacion_3D
+        #self.flag_creacion_3D = flag_creacion_3D
         self.imagen_proyeccion = imagen_proyeccion
         self.Proyeccion_perforaciones = Proyeccion_perforaciones
         self.aruco_proyeccion = aruco_proyeccion
         self.parametros_botones = parametros_botones
         self.dicionario_general = {}
-        self.marker_5_points = None
-        self.marker_6_points = None
-        self.marker_7_points = None
-        self.marker_8_points = None
+        self.a = 1
         self.flag_interna = True
         print("Proceso de proyección inicializado")
-    
+
+        # Load the image once during initialization
+        image1 = cv2.imread('App-development/ENTORNO VIRTUAL PARA GUI/Interfaz_V11/placa de montaje.jpg', cv2.IMREAD_UNCHANGED)
+        if image1 is None:
+            print("Error al leer la imagen.")
+            self.image = None
+        else:
+            bgra_planes = cv2.split(image1)
+            self.image = cv2.merge(bgra_planes[:3])
+            self.image_original = self.image.copy()  # Keep a copy of the original image
+
     def run(self):
-        #print("Proceso de proyección iniciado")
-          # Llama al método init
+        print("Proceso de proyecciones esperando para iniciar.")
+        self.start_ProyeccionP_event.wait()  # Espera hasta que se señale el evento
+        print("Proceso de proyecciones iniciado.")
+        self.init()  # Initialize camera parameters and aruco dictionary
 
-        while self.flag_interna:
 
-            self.init()
+        while self.flag_interna and self.start_ProyeccionP_event.is_set():
 
-            if not self.parametros_botones.empty():
-                dic_parametros2 = self.parametros_botones.get()
-                self.dicionario_general.update(dic_parametros2)
-                #print(dic_parametros2)
-            if not self.parametros_vectores.empty():
-                dic_parametros = self.parametros_vectores.get()
-                self.dicionario_general.update(dic_parametros)
-                #print(dic_parametros)
+            try:
+                if not self.parametros_botones.empty():
+                    dic_parametros2 = self.parametros_botones.get()
+                    self.dicionario_general.update(dic_parametros2)
+
+                if not self.parametros_vectores.empty():
+                    dic_parametros = self.parametros_vectores.get()
+                    self.dicionario_general.update(dic_parametros)
+                
+               # print("Se acualizo el diccionario")
+            except Exception as e:
+                print(f"Exception occurred while updating parameters: {e}")
+                self.finalizar_process_interno()
+                break
+            
+            
+
             if 'Opcion' in self.dicionario_general:
                 Alternar_arucoYProyeccion = self.dicionario_general['Opcion']
                 if Alternar_arucoYProyeccion == "A":
-                    if 'Brillo'in self.dicionario_general and 'Contraste'in self.dicionario_general:
+                    if 'Brillo' in self.dicionario_general and 'Contraste' in self.dicionario_general:
                         self.brillo = self.dicionario_general['Brillo']
                         self.contraste = self.dicionario_general['Contraste']
                         self.update_image()
+                        print(self.a)
+                        self.a += 1
+                        time.sleep(0.3)
 
-                elif Alternar_arucoYProyeccion == "B":
-                    if self.marker_5_points is not None or self.marker_6_points is not None or self.marker_7_points is not None or self.marker_8_points is not None:
-                        if 'Pot1' in self.dicionario_general:
+                elif Alternar_arucoYProyeccion == "B" and self.image is not None:
+                    pot1_changed = 'Pot1' in self.dicionario_general and self.dicionario_general['Pot1'] != getattr(self, 'pot1_prev', None)
+                    pot2_changed = 'Pot2' in self.dicionario_general and self.dicionario_general['Pot2'] != getattr(self, 'pot2_prev', None)
+                    print(self.a)
+                    self.a -= 1
+
+                    
+                    # Update settings based on parameters
+                    try:    
+                        for key in ['DI2', 'DI3', 'DI4', 'DI5', 'DI6', 'DI7', 'DI8', 'DI9', 'DI10', 'DI11', 'DI12', 'corners_reales_1', 'corners_reales_2', 'corners_reales_3', 'corners_reales_4']:
+                            if key in self.dicionario_general:
+                                setattr(self, key, self.dicionario_general[key])
+                    except Exception as e:
+                        print(f"Exception occurred while updating parameters: {e}")
+
+                    if pot1_changed or pot2_changed:
+                        self.image = self.image_original.copy()  # Reset to the original image
+
+                        if pot1_changed:
                             self.pot1 = self.dicionario_general['Pot1']
-                        if 'Pot2' in self.dicionario_general:
+                            mapped_x = int((self.pot1 / 1023) * 1905)
+                            self.pot1_prev = self.pot1
+                        
+                        if pot2_changed:
                             self.pot2 = self.dicionario_general['Pot2']
-                        if 'DI2' in self.dicionario_general:
-                            self.di2 = self.dicionario_general['DI2']
-                        if 'DI3' in self.dicionario_general:
-                            self.di3 = self.dicionario_general['DI3']
-                        if 'DI4' in self.dicionario_general:
-                            self.di4 = self.dicionario_general['DI4']
-                        if 'DI5' in self.dicionario_general:
-                            self.di5 = self.dicionario_general['DI5']
-                        if 'DI6' in self.dicionario_general:
-                            self.di6 = self.dicionario_general['DI6']
-                        if 'DI7' in self.dicionario_general:
-                            self.di7 = self.dicionario_general['DI7']
-                        if 'DI8' in self.dicionario_general:
-                            self.di8 = self.dicionario_general['DI8']
-                        if 'DI9' in self.dicionario_general:
-                            self.di9 = self.dicionario_general['DI9']
-                        if 'DI10' in self.dicionario_general:
-                            self.di10 = self.dicionario_general['DI10']
-                        if 'DI11' in self.dicionario_general:
-                            self.di11 = self.dicionario_general['DI11']
-                        if 'DI12' in self.dicionario_general:
-                            self.di12 = self.dicionario_general['DI12']
-                        if 'corners_reales_1' in self.dicionario_general:
-                            self.corners_reales_1 = self.dicionario_general['corners_reales_1']
-                        if 'corners_reales_2' in self.dicionario_general:
-                            self.corners_reales_2 = self.dicionario_general['corners_reales_2']
-                        if 'corners_reales_3' in self.dicionario_general:
-                            self.corners_reales_3 = self.dicionario_general['corners_reales_3']
-                        if 'corners_reales_4' in self.dicionario_general:
-                            self.corners_reales_4 = self.dicionario_general['corners_reales_4']
+                            mapped_y = int((self.pot2 / 1023) * 1065)
+                            self.pot2_prev = self.pot2
 
-                    else:
-                        print("No se tienen datos de las esquinas de la proyeccion")
+                        def draw_x_line(image, x_pos):
+                            cv2.line(image, (x_pos, 0), (x_pos, image.shape[0]), (0, 255, 0), 10)
 
+                        def draw_y_line(image, y_pos):
+                            cv2.line(image, (0, y_pos), (image.shape[1], y_pos), (0, 255, 0), 10)
 
+                        def change_image_corner(image, x_pos, y_pos):
+                            original_pts = np.float32([[0, 0], [image.shape[1], 0], [0, image.shape[0]], [image.shape[1], image.shape[0]]])
+                            destination_pts = np.float32([[image.shape[1]*0.05, image.shape[0]*0.08], [image.shape[1]*0.85, image.shape[0]*0.06], [image.shape[1]*0.1, image.shape[0]*0.76], [image.shape[1]*0.95, image.shape[0]*0.9]])
+                            matrix = cv2.getPerspectiveTransform(original_pts, destination_pts.astype(np.float32))
+                            result = cv2.warpPerspective(image, matrix, (image.shape[1], image.shape[0]))
+                            return result
 
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            time.sleep(0.05)
-            #print(self.dicionario_general)
+                        if getattr(self, 'Habilitar_linea_EjeX', False):
+                            draw_x_line(self.image, mapped_x)
+                        if getattr(self, 'Habilitar_linea_EjeY', False):
+                            draw_y_line(self.image, mapped_y)
+                        self.image = change_image_corner(self.image, mapped_x, mapped_y)
 
-
-
-
-
+                        try:
+                            pass
+                            self.aruco_proyeccion.put_nowait(self.image)
+                        except Exception as e:
+                            print(f"Exception occurred while putting image in aruco_proyeccion queue: {e}")
+            #print("se finalizo la iteracion")
+            time.sleep(0.3)
+        
+        self.finalizar_process_interno()
+            
 
     def init(self):
         self.brillo = 0
@@ -1618,8 +1668,6 @@ class Process_proyecciones(multiprocessing.Process):
             buf = cv2.addWeighted(buf, alpha_c, buf, 0, gamma_c)
         return buf
 
-    def invert_image(self, image):
-        return cv2.bitwise_not(image)
     def update_image(self):
         if not self.imagen_proyeccion.empty():
             frame = self.imagen_proyeccion.get()
@@ -1646,17 +1694,14 @@ class Process_proyecciones(multiprocessing.Process):
 
             try:
                 self.aruco_proyeccion.put_nowait(adjusted)
-            except:
-                pass
-
-
- 
+            except Exception as e:
+                print(f"Exception occurred while putting adjusted image in aruco_proyeccion queue: {e}")
 
     def finalizar_process_interno(self):
-        self.flag_creacion_3D = False
         self.flag_interna = False
-        self.matplotlib_iniciado.value = False
-#--------------------------------------------------------------------------------------------------------------
+        #self.flag_creacion_3D = False
+        print("Proceso de proyección finalizado")
+        #--------------------------------------------------------------------------------------------------------------
 class ProjectionWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -1720,13 +1765,24 @@ class Ventana_Principal(QMainWindow):
         self.aruco_proyeccion = multiprocessing.Queue(maxsize = 5)
         self.dic_thread = DICThread()
         self.video_thread = VideoStreamThread(self.input_queue_ROI1,self.input_queue_ROI2,self.input_queue_ROI3,self.input_queue_ROI4,self.imagen_proyeccion)
+        global flag_creacion_3D
+        self.start_ProyeccionP_event = multiprocessing.Event()
+        self.matplotlib_process = Process_proyecciones(self.matplotlib_iniciado,self.parametros_vectores,self.imagen_proyeccion,self.Proyeccion_perforaciones,self.aruco_proyeccion,self.parametros_botones,self.start_ProyeccionP_event)
+        try:
+            if self.matplotlib_process and not self.matplotlib_process.is_alive():
+                self.matplotlib_process.start()
+                print("Proceso matplotlib_process iniciado.")
+            else:
+                print("Proceso matplotlib_process ya está en ejecución o no es válido.")
+        except Exception as e:
+            print(f"No se pudo iniciar matplotlib_process: {e}")
         ###########-----------------------------------------------------------------------------------------
         #estos parametros cambian dependidendo de la camara que se use
             
 #generacion de UI Principal-----------------------------------------
     def inicializarUI(self):
         self.setGeometry(0,0,1250,750)
-        self.setWindowTitle("Interfaz_v11.3") 
+        self.setWindowTitle("Interfaz_v11.4") 
         self.generate_main_window()
         self.created_actions()
         self.show()
@@ -1857,7 +1913,7 @@ class Ventana_Principal(QMainWindow):
         central_layout.addWidget(self.textpestaña2)
         self.btn_imagen_proyeccion = QPushButton("Iniciar_Process_proyecciones")
         
-        self.btn_imagen_proyeccion.clicked.connect(lambda: self.iniciar_Process_proyecciones(self.matplotlib_iniciado,self.parametros_vectores,self.imagen_proyeccion,self.Proyeccion_perforaciones,self.aruco_proyeccion,self.parametros_botones))
+        self.btn_imagen_proyeccion.clicked.connect(lambda: self.iniciar_Process_proyecciones(self.start_ProyeccionP_event))
         central_layout.addWidget(self.btn_imagen_proyeccion)
         
         self.CustomWidget = CustomWidget(self.aruco_proyeccion,self.parametros_botones)
@@ -1887,19 +1943,26 @@ class Ventana_Principal(QMainWindow):
         self.setCentralWidget(main_container)
 
         
-    def iniciar_Process_proyecciones(self,matplotlib_iniciado,parametros_vectores,imagen_proyeccion,Proyeccion_perforaciones,aruco_proyeccion,parametros_botones):
-
-        global flag_creacion_3D
-        if not matplotlib_iniciado.value:
-            #flag_creacion_3D = True
-            self.matplotlib_process = Process_proyecciones(matplotlib_iniciado,parametros_vectores,flag_creacion_3D,imagen_proyeccion,Proyeccion_perforaciones,aruco_proyeccion,parametros_botones)
+    def iniciar_Process_proyecciones(self, start_ProyeccionP_event):
+        global Variable_General
+        cpu_percent = psutil.cpu_percent(interval=1)
+        print(cpu_percent)
+        if cpu_percent <= 35:
+            self.start_ProyeccionP_event = start_ProyeccionP_event
             try:
-                if not self.matplotlib_process.is_alive() and self.matplotlib_process is not None:
-                                self.matplotlib_process.start()
+                if start_ProyeccionP_event.is_set():
+                    start_ProyeccionP_event.clear()  # Si el evento está establecido, lo pone en clear
+                    print("Proceso matplotlib_process detenido.")
+                else:
+                    start_ProyeccionP_event.set()  # Si el evento no está establecido, lo pone en set
+                    print("Proceso matplotlib_process iniciado.")
             except Exception as e:
-                print(f"No se pudo matplotlib_process: {e}")
+                print(f"No se pudo iniciar matplotlib_process: {e}")
+        else:
+            print(f"Uso de CPU alto ({cpu_percent}%), esperando para iniciar el proceso...")
 
-            self.matplotlib_process.value = True
+
+            
 
 
     def open_projection_window(self):
@@ -1913,7 +1976,7 @@ class Ventana_Principal(QMainWindow):
         self.projection_window.show()
 
     def create_dock_2(self):
-        self.midockwidget = MiDockWidget(self.video_thread,self.dic_thread,self.input_queue_ROI1,self.input_queue_ROI2,self.input_queue_ROI3,self.input_queue_ROI4,self.parametros_vectores)
+        self.midockwidget = MiDockWidget(self.video_thread,self.dic_thread,self.input_queue_ROI1,self.input_queue_ROI2,self.input_queue_ROI3,self.input_queue_ROI4,self.parametros_vectores,self.matplotlib_process)
         self.dock2 = QDockWidget()
         self.dock2.setWidget(self.midockwidget)
 
@@ -1946,6 +2009,8 @@ class Ventana_Principal(QMainWindow):
 
     def closeEvent(self, event):
         print("Inicio Close Event --------------------------------------------")
+        global Variable_General
+        Variable_General = False
         try: 
             print("Finalizacion treads")
             self.stop_threads()
@@ -1956,22 +2021,24 @@ class Ventana_Principal(QMainWindow):
 
     def stop_threads(self):
         print("Inicio stop tread")
-        self.midockwidget.image_processor_thread.finalizar_process()
+        
 
         try: 
-            if self.matplotlib_process is not None and self.matplotlib_process.is_alive():
+            if self.matplotlib_process is not None:
+                self.start_ProyeccionP_event.clear()
                 self.matplotlib_process.finalizar_process_interno()
                 self.matplotlib_process.terminate()
                 self.matplotlib_process.join()
-                print("Se finalizo correctamente el process 1")
-                if self.process_1 is not None and self.process_1.is_alive():
-                    print("No se finalizo el process 1")
+                print("Se finalizo correctamente el process proyecciones")
+                if self.matplotlib_process is not None and self.matplotlib_process.is_alive():
+                    print("No se finalizo el process process proyecciones")
                 else:
-                    print("Se finalizo correctamente el process 1")
+                    print("Se finalizo correctamente el process process proyecciones")
             else:
-                print("No esta activo el process 1")
+                print("No esta activo el process process proyecciones")
         except:
             pass
+        self.midockwidget.image_processor_thread.finalizar_process()
         
 
 

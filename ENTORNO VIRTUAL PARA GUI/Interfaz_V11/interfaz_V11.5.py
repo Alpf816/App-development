@@ -24,22 +24,16 @@ from PyQt6.QtWidgets import (QApplication,
 from PyQt6.QtGui import QImage, QPixmap,QAction,QKeySequence,QGuiApplication, QScreen,QFont,QKeyEvent
 from PyQt6.QtCore import Qt,QThread, pyqtSignal, QMutex, QMutexLocker,QTimer,QCoreApplication,QObject
 import cv2
-from matplotlib import pyplot as plt
-from matplotlib.animation import FuncAnimation
-from matplotlib.widgets import Button, TextBox
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
 import time
 from queue import Queue
 import cv2.aruco as aruco
-import random
 import serial
 #multiprocessing.set_start_method('spawn')
 
 width_video_capture = int
 height_video_capture = int
-
+Resolucion_Camara = False
 
 class VideoStreamThread(QThread):
     frame_actualizado = pyqtSignal(QImage)
@@ -94,15 +88,19 @@ class VideoStreamThread(QThread):
 
     def run(self):
         try:
+            global width_video_capture, height_video_capture,Resolucion_Camara
             coordinate_image_initialized = False
             coordinate_image = None
             Yatengodatos = True
             self.capturando = True
             #cv2.setUseOptimized(False)
             video_stream = cv2.VideoCapture(0)
+            if Resolucion_Camara:
+                video_stream.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                video_stream.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             
             if Yatengodatos:
-                global width_video_capture, height_video_capture
+                
                 width_video_capture = int(video_stream.get(cv2.CAP_PROP_FRAME_WIDTH))
                 height_video_capture = int(video_stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
                 Yatengodatos = False
@@ -1412,11 +1410,11 @@ class CustomWidget(QWidget):
                 frame = self.get_frame.get()
                 if frame is not None and frame.size != 0:
                     # Tamaño deseado
-                    max_width = 300
-                    max_height = 200
+                    max_width = 420
+                    max_height = 300
 
                     # Obtener dimensiones originales
-                    height, width = frame.shape
+                    height, width = frame.shape[:2]
 
                     # Calcular la relación de aspecto y nuevas dimensiones
                     aspect_ratio = width / height
@@ -1433,9 +1431,13 @@ class CustomWidget(QWidget):
                     # Redimensionar el frame manteniendo la relación de aspecto
                     resized_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
-                    # Convertir el frame redimensionado a QImage
-                    bytes_per_line = new_width  # Para imágenes en escala de grises
-                    qimg = QImage(resized_frame.data, new_width, new_height, bytes_per_line, QImage.Format.Format_Grayscale8)
+                    # Detectar el número de canales
+                    if len(resized_frame.shape) == 2:  # Escala de grises
+                        bytes_per_line = new_width  # Para imágenes en escala de grises
+                        qimg = QImage(resized_frame.data, new_width, new_height, bytes_per_line, QImage.Format.Format_Grayscale8)
+                    elif len(resized_frame.shape) == 3:  # Color BGR
+                        bytes_per_line = new_width * 3  # Para imágenes BGR
+                        qimg = QImage(resized_frame.data, new_width, new_height, bytes_per_line, QImage.Format.Format_BGR888)
 
                     # Actualizar el QLabel con la nueva imagen
                     self.label.setPixmap(QPixmap.fromImage(qimg))
@@ -1488,102 +1490,141 @@ class Process_proyecciones(multiprocessing.Process):
         super().__init__()
         self.matplotlib_iniciado = matplotlib_iniciado
         self.parametros_vectores = parametros_vectores
-        self.flag_creacion_3D = flag_creacion_3D
+        #self.flag_creacion_3D = flag_creacion_3D
         self.imagen_proyeccion = imagen_proyeccion
         self.Proyeccion_perforaciones = Proyeccion_perforaciones
         self.aruco_proyeccion = aruco_proyeccion
         self.parametros_botones = parametros_botones
         self.dicionario_general = {}
-        self.marker_5_points = None
-        self.marker_6_points = None
-        self.marker_7_points = None
-        self.marker_8_points = None
+        self.a = 1
         self.flag_interna = True
         print("Proceso de proyección inicializado")
-    
+
+
+        # Load the image once during initialization
+        image1 = cv2.imread('App-development/ENTORNO VIRTUAL PARA GUI/Interfaz_V11/placa de montaje.jpg', cv2.IMREAD_UNCHANGED)
+        if image1 is None:
+            print("Error al leer la imagen.")
+            self.image = None
+        else:
+            bgra_planes = cv2.split(image1)
+            self.image = cv2.merge(bgra_planes[:3])
+            self.image_original = self.image.copy()  # Keep a copy of the original image
+        self.pot1_prev = None
+        self.pot2_prev = None
     def run(self):
-        #print("Proceso de proyección iniciado")
-          # Llama al método init
-
+        self.init()
         while self.flag_interna:
+            
+            
 
-            self.init()
+            try:
+                if not self.parametros_botones.empty():
+                    dic_parametros2 = self.parametros_botones.get()
+                    self.dicionario_general.update(dic_parametros2)
 
-            if not self.parametros_botones.empty():
-                dic_parametros2 = self.parametros_botones.get()
-                self.dicionario_general.update(dic_parametros2)
-                #print(dic_parametros2)
-            if not self.parametros_vectores.empty():
-                dic_parametros = self.parametros_vectores.get()
-                self.dicionario_general.update(dic_parametros)
-                #print(dic_parametros)
+                if not self.parametros_vectores.empty():
+                    dic_parametros = self.parametros_vectores.get()
+                    self.dicionario_general.update(dic_parametros)
+            except:
+                #self.finalizar_process_interno()
+                pass
+
             if 'Opcion' in self.dicionario_general:
                 Alternar_arucoYProyeccion = self.dicionario_general['Opcion']
                 if Alternar_arucoYProyeccion == "A":
-                    if 'Brillo'in self.dicionario_general and 'Contraste'in self.dicionario_general:
+                    if 'Brillo' in self.dicionario_general and 'Contraste' in self.dicionario_general:
                         self.brillo = self.dicionario_general['Brillo']
                         self.contraste = self.dicionario_general['Contraste']
                         self.update_image()
+                        print(self.a)
+                        self.a = self.a + 1
 
-                elif Alternar_arucoYProyeccion == "B":
-                    if self.marker_5_points is not None or self.marker_6_points is not None or self.marker_7_points is not None or self.marker_8_points is not None:
-                        if 'Pot1' in self.dicionario_general:
+                        time.sleep(0.3)
+
+                elif Alternar_arucoYProyeccion == "B" and self.image is not None:
+                    pot1_changed = 'Pot1' in self.dicionario_general and self.dicionario_general['Pot1'] != self.pot1_prev
+                    pot2_changed = 'Pot2' in self.dicionario_general and self.dicionario_general['Pot2'] != self.pot2_prev
+                    print(self.a)
+                    self.a = self.a - 1
+
+                    if 'DI2' in self.dicionario_general:
+                        self.Borrar_linea_EjeY = self.dicionario_general['DI2']
+                    if 'DI3' in self.dicionario_general:
+                        self.Cambiar_area_superficie = self.dicionario_general['DI3']
+                    if 'DI4' in self.dicionario_general:
+                        self.Enviar_datos_B = self.dicionario_general['DI4']
+                    if 'DI5' in self.dicionario_general:
+                        self.Precision = self.dicionario_general['DI5']
+                    if 'DI6' in self.dicionario_general:
+                        self.Enviar_datos_S = self.dicionario_general['DI6']
+                    if 'DI7' in self.dicionario_general:
+                        self.Cambiar_esquina = self.dicionario_general['DI7']
+                    if 'DI8' in self.dicionario_general:
+                        self.Habilitar_linea_EjeY = self.dicionario_general['DI8']
+                    if 'DI9' in self.dicionario_general:
+                        self.Habilitar_linea_EjeX = self.dicionario_general['DI9']
+                    if 'DI10' in self.dicionario_general:
+                        self.Añadir_linea_EjeY = self.dicionario_general['DI10']
+                    if 'DI11' in self.dicionario_general:
+                        self.Borrar_linea_EjeX = self.dicionario_general['DI11']
+                    if 'DI12' in self.dicionario_general:
+                        self.Añadir_linea_EjeX = self.dicionario_general['DI12']
+                    if 'corners_reales_1' in self.dicionario_general:
+                        self.corners_reales_1 = self.dicionario_general['corners_reales_1']
+                        
+                    if 'corners_reales_2' in self.dicionario_general:
+                        self.corners_reales_2 = self.dicionario_general['corners_reales_2']
+                        
+                    if 'corners_reales_3' in self.dicionario_general:
+                        self.corners_reales_3 = self.dicionario_general['corners_reales_3']
+                        
+                    if 'corners_reales_4' in self.dicionario_general:
+                        self.corners_reales_4 = self.dicionario_general['corners_reales_4']
+                        
+                    
+                    
+                    if pot1_changed or pot2_changed:
+                        self.image = self.image_original.copy()  # Reset to the original image
+
+                        if pot1_changed:
                             self.pot1 = self.dicionario_general['Pot1']
-                        if 'Pot2' in self.dicionario_general:
+                            mapped_x = int((self.pot1/1023)*self.image.shape[0])
+                            self.pot1_prev = self.pot1
+                        
+                        if pot2_changed:
                             self.pot2 = self.dicionario_general['Pot2']
-                        if 'DI2' in self.dicionario_general:
-                            self.di2 = self.dicionario_general['DI2']
-                        if 'DI3' in self.dicionario_general:
-                            self.di3 = self.dicionario_general['DI3']
-                        if 'DI4' in self.dicionario_general:
-                            self.di4 = self.dicionario_general['DI4']
-                        if 'DI5' in self.dicionario_general:
-                            self.di5 = self.dicionario_general['DI5']
-                        if 'DI6' in self.dicionario_general:
-                            self.di6 = self.dicionario_general['DI6']
-                        if 'DI7' in self.dicionario_general:
-                            self.di7 = self.dicionario_general['DI7']
-                        if 'DI8' in self.dicionario_general:
-                            self.di8 = self.dicionario_general['DI8']
-                        if 'DI9' in self.dicionario_general:
-                            self.di9 = self.dicionario_general['DI9']
-                        if 'DI10' in self.dicionario_general:
-                            self.di10 = self.dicionario_general['DI10']
-                        if 'DI11' in self.dicionario_general:
-                            self.di11 = self.dicionario_general['DI11']
-                        if 'DI12' in self.dicionario_general:
-                            self.di12 = self.dicionario_general['DI12']
-                        if 'corners_reales_1' in self.dicionario_general:
-                            self.corners_reales_1 = self.dicionario_general['corners_reales_1']
-                        if 'corners_reales_2' in self.dicionario_general:
-                            self.corners_reales_2 = self.dicionario_general['corners_reales_2']
-                        if 'corners_reales_3' in self.dicionario_general:
-                            self.corners_reales_3 = self.dicionario_general['corners_reales_3']
-                        if 'corners_reales_4' in self.dicionario_general:
-                            self.corners_reales_4 = self.dicionario_general['corners_reales_4']
+                            mapped_y = int((self.pot2/1023)*self.image.shape[1])
+                            self.pot2_prev = self.pot2
 
-                    else:
-                        print("No se tienen datos de las esquinas de la proyeccion")
+                        def draw_x_line(image, x_pos):
+                            cv2.line(image, (x_pos, 0), (x_pos, image.shape[0]), (0, 255, 0), 10)
+
+                        def draw_y_line(image, y_pos):
+                            cv2.line(image, (0, y_pos), (image.shape[1], y_pos), (0, 255, 0), 10)
+
+                        def change_image_corner(image, x_pos, y_pos):
+                            original_pts = np.float32([[0, 0], [image.shape[1], 0], [0, image.shape[0]], [image.shape[1], image.shape[0]]])
+                            destination_pts = np.float32([[image.shape[1]*0.05, image.shape[0]*0.08], [image.shape[1]*0.85, image.shape[0]*0.06], [image.shape[1]*0.1, image.shape[0]*0.76], [image.shape[1]*0.95, image.shape[0]*0.9]])
+                            matrix = cv2.getPerspectiveTransform(original_pts, destination_pts.astype(np.float32))
+                            result = cv2.warpPerspective(image, matrix, (image.shape[1], image.shape[0]))
+                            return result
 
 
+                        if self.Habilitar_linea_EjeX:
+                            draw_x_line(self.image, mapped_x)
+                        if self.Habilitar_linea_EjeY:
+                            draw_y_line(self.image, mapped_y)
+                        self.image = change_image_corner(self.image, mapped_x, mapped_y)
 
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            time.sleep(0.05)
-            #print(self.dicionario_general)
+                        try:
+                            self.aruco_proyeccion.put_nowait(self.image)
+                        except:
+                            pass
+            time.sleep(0.3)
+        self.finalizar_process_interno()
 
-
-
+        
 
 
 
@@ -1653,9 +1694,8 @@ class Process_proyecciones(multiprocessing.Process):
  
 
     def finalizar_process_interno(self):
-        self.flag_creacion_3D = False
         self.flag_interna = False
-        self.matplotlib_iniciado.value = False
+        self.flag_creacion_3D = False
 #--------------------------------------------------------------------------------------------------------------
 class ProjectionWindow(QWidget):
     def __init__(self):
@@ -1779,9 +1819,9 @@ class Ventana_Principal(QMainWindow):
         self.text2.setStyleSheet("background-color: #dadada")
         self.main_box_dock1.addWidget(self.text2, 4, 0,1,2)
 
-        self.btn_cambiar_color = QPushButton("Cambiar Color")
+        self.btn_cambar_resolucion = QPushButton("Cambiar resolucion")
 
-        self.main_box_dock1.addWidget(self.btn_cambiar_color, 6, 1,1,1)
+        
         self.text3 = QLabel("distancias")
         self.text3.setFixedHeight(20)
         self.text3.setStyleSheet("background-color: #dadada")
@@ -1802,13 +1842,35 @@ class Ventana_Principal(QMainWindow):
         self.main_box_dock1.addWidget(dist_camara_proyector_label, 10, 0)
         self.main_box_dock1.addWidget(self.dist_camara_proyector_lineedit, 10, 1)
         self.main_box_dock1.addWidget(boton_inreso_distancias, 11, 0,1,2)
-        self.main_box_dock1.setRowStretch(12,1)
+        self.text4 = QLabel("cambiar resolucion de la camara")
+        self.text4.setFixedHeight(20)
+        self.text4.setStyleSheet("background-color: #dadada")
+        self.main_box_dock1.addWidget(self.text4, 12, 0,1,2)
+        self.main_box_dock1.addWidget(self.btn_cambar_resolucion, 13, 0,1,1)
+        self.btn_cambar_resolucion.clicked.connect(self.cambiar_resolucion_camara)
+
+
+
+
+        
+
+
+        self.main_box_dock1.setRowStretch(14,1)
+        
+
         self.dic_thread.start()
         self.contenedor_de_widgets.setLayout(self.main_box_dock1)
         self.dock1.setWidget(self.contenedor_de_widgets)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea,self.dock1)
         boton_inreso_distancias.clicked.connect(self.calcular_distancias)
-    
+
+    def cambiar_resolucion_camara(self):
+        global Resolucion_Camara
+        if Resolucion_Camara:
+            Resolucion_Camara = False
+        elif Resolucion_Camara == False:
+            Resolucion_Camara = True
+
     def calcular_distancias(self):
         # Obtenemos los valores de los LineEdit
         global distancia_camara_proyector,distancia_camara_superficie,distancia_proyector_superficie
